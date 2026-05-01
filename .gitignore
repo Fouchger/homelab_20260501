@@ -11,6 +11,7 @@
 
 # Generated state
 state/
+state1/
 
 # Terraform
 .terraform/
@@ -50,3 +51,4 @@ coverage.*
 # Python cache
 __pycache__/
 *.pyc
+
