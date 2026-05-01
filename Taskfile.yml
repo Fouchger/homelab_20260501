@@ -1,0 +1,170 @@
+# ==============================================================================
+# File: Taskfile.yml
+# Purpose:
+#   Root Task entry point and control plane for the homelab repository.
+# Notes:
+#   - install.sh downloads or updates the repository only.
+#   - Taskfile.yml is the operational entry point after installation.
+#   - Shared variables are defined once here and reused by child Taskfiles.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+dotenv:
+  - state/config/.env
+
+vars:
+  # Repository paths
+  STATE_DIR: state
+  CONFIG_DIR: '{{.STATE_DIR}}/config'
+  CONFIG_ENV_FILE: '{{.CONFIG_DIR}}/.env'
+  SCRIPTS_DIR: scripts
+  SCRIPT_LIB_DIR: '{{.SCRIPTS_DIR}}/lib'
+  SERVICES_DIR: services
+  PROXMOX_HELPER_SCRIPTS_DIR: '{{.SERVICES_DIR}}/proxmox_helper_scripts'
+
+  # Secrets and backup paths
+  SECRETS_DIR: '{{.STATE_DIR}}/secrets'
+  PASSWORDS_DIR: '{{.SECRETS_DIR}}/passwords'
+  SOPS_DIR: '{{.SECRETS_DIR}}/sops'
+  BACKUP_DIR: '{{.STATE_DIR}}/backups'
+  OFFLINE_BACKUP_DIR: '{{.BACKUP_DIR}}/offline'
+
+  # Password and SOPS files
+  PASSWORDS_ENCRYPTED_FILE: '{{.PASSWORDS_DIR}}/passwords.enc.env'
+  PASSWORDS_RUNTIME_FILE: '{{.PASSWORDS_DIR}}/passwords.runtime.env'
+  PASSWORD_AUDIT_REPORT: '{{.PASSWORDS_DIR}}/password-audit-report.txt'
+  SOPS_AGE_KEY_FILE: '{{.SOPS_DIR}}/keys.txt'
+  SOPS_AGE_RECIPIENTS_FILE: '{{.SOPS_DIR}}/recipients.txt'
+  SOPS_CONFIG_FILE: .sops.yaml
+  INSTALL_STATE_FILE: '{{.SOPS_DIR}}/install-state.env'
+
+  # Shared script paths
+  BANNER_SCRIPT: '{{.SCRIPTS_DIR}}/banner/banner.sh'
+  ENSURE_EXECUTABLE_SCRIPTS: '{{.SCRIPT_LIB_DIR}}/ensure-executable-scripts.sh'
+  TERMINAL_COLOURS_SCRIPT: '{{.SCRIPT_LIB_DIR}}/terminal-colours.sh'
+  PROXMOX_HELPER_LXC_RUNNER: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-lxc-create.sh'
+  CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
+  PLEX_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/plex.sh'
+
+  # Git and GitHub configuration keys
+  GITHUB_USERNAME_KEY: GITHUB_USERNAME
+  GITHUB_TOKEN_KEY: GITHUB_TOKEN
+  GIT_USER_NAME_KEY: GIT_USER_NAME
+  GIT_USER_EMAIL_KEY: GIT_USER_EMAIL
+
+includes:
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
+  passwords: ./taskfile/passwords.Taskfile.yml
+  github: ./taskfile/github.Taskfile.yml
+
+tasks:
+  default:
+    desc: Show available homelab tasks
+    cmds:
+      - task: tasklist
+
+  tasklist:
+    desc: Show the available homelab tasks
+    cmds:
+      - task --taskfile "{{.TASKFILE}}" --list
+
+  help:
+    desc: Show safe tasks a user can run and what each task does
+    cmds:
+      - |
+        set -euo pipefail
+
+        cat <<'EOHELP'
+        Homelab safe task help
+
+        Run tasks from the repository root. This help only lists tasks intended
+        for normal operator use. Destructive, high-risk, or internal helper
+        tasks are intentionally excluded.
+
+        --------------------------------------------------------------
+        General
+        --------------------------------------------------------------
+        task help                       -> Show this safe task help.
+
+        --------------------------------------------------------------
+        Homelab Setup
+        --------------------------------------------------------------
+        task homelab:setup              -> Run the standard homelab setup flow, including required script
+                                            permissions and the reviewed Proxmox code-server helper.
+
+        --------------------------------------------------------------
+        Password and secrets setup
+        --------------------------------------------------------------
+        task passwords:help             -> Show safe password and SOPS tasks only.
+        task passwords:setup            -> Install required tools, configure SOPS and age, generate keys,
+                                            create an offline backup, encrypt the password file, and clean up
+                                            runtime plaintext files.
+        task passwords:install          -> Install SOPS, age, and required packages. Existing packages are
+                                            recorded so later cleanup does not remove shared prerequisites.
+        task passwords:configure        -> Validate SOPS and age, create required folders, and select the
+                                            password editor from nano, vi, or vim. The editor is installed if
+                                            missing.
+        task passwords:keys:generate    -> Generate the age key and SOPS recipient required to encrypt the
+                                            password file. Existing keys are preserved.
+        task passwords:backup:offline   -> Create a local offline-backup bundle for the SOPS config and age
+                                            key material. Move the bundle to offline storage after creation.
+        task passwords:encrypt          -> Create the initial encrypted password file, or leave the existing
+                                            encrypted file unchanged if it already exists.
+
+        --------------------------------------------------------------
+        Password and secrets operations
+        --------------------------------------------------------------
+        task passwords:edit             -> Edit the encrypted password file through SOPS using the selected
+                                            editor. Plaintext runtime files are removed after editing.
+        task passwords:audit            -> Generate a password audit report without printing secret values.
+                                            Checks include blank values, placeholders, duplicate keys, and
+                                            short values.
+        task passwords:cleanup          -> Remove runtime plaintext password files and temporary decrypted
+                                            files. Safe to run after any password task.
+
+        --------------------------------------------------------------
+        Proxmox helper scripts
+        --------------------------------------------------------------
+        task proxmox_scripts:code-server:install -> Install code-server using either the reviewed static script in this
+                                                    repository or, after explicit confirmation, the latest upstream
+                                                    community script.
+
+        --------------------------------------------------------------
+        Git and Github Operations
+        --------------------------------------------------------------
+        task github:setup                -> Install Git and GitHub CLI, configure Git identity, authenticate
+                                            GitHub CLI, and report status.
+        task github:audit                -> Show Git, gh, identity, token-source, and authentication status
+                                            without printing secrets.
+
+        --------------------------------------------------------------
+        Not listed here
+        --------------------------------------------------------------
+          Destructive or higher-risk tasks such as password destruction, raw
+          decryption, terminal password display, and key rotation are excluded
+          from safe help. Inspect the Taskfiles directly if you need advanced
+          maintenance operations.
+
+        EOHELP
+
+  homelab:setup:
+    desc: Set up the complete homelab control plane, then back up and plan MikroTik changes
+    cmds:
+      - |
+        set -euo pipefail
+
+        clear
+        bash "{{.BANNER_SCRIPT}}"
+        bash "{{.ENSURE_EXECUTABLE_SCRIPTS}}"
+      - task: proxmox_scripts:code-server:install
+      - task: passwords:setup
+      - task: github:setup
+      - |
+        set -euo pipefail
+
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Homelab setup is complete. Enjoy!" "GREEN"

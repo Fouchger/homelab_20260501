@@ -1,7 +1,155 @@
 # Homelab
 
-## Install
+Homelab is a Taskfile-driven control-plane repository for building and operating a personal Proxmox-focused lab environment.
+
+The repository is designed around a simple operating model: `install.sh` bootstraps or updates the repo, then `Taskfile.yml` becomes the main entry point for day-to-day setup and maintenance.
+
+## What this repo contains
+
+```text
+.
+├── install.sh                                  # Bootstrap installer for Debian/Ubuntu systems
+├── Taskfile.yml                                # Root operational entry point
+├── taskfile/
+│   ├── passwords.Taskfile.yml                  # SOPS, age, password, backup, audit, and cleanup tasks
+│   └── proxmox_scripts.Taskfile.yml            # Proxmox helper script task entry points
+├── scripts/
+│   ├── banner/banner.sh                        # Homelab terminal banner
+│   └── lib/
+│       ├── add_shared_drives.sh                # Interactive CIFS shared-drive helper
+│       ├── ensure-executable-scripts.sh        # Script permission normalisation
+│       └── terminal-colours.sh                 # Shared terminal colour helpers
+├── services/
+│   └── proxmox_helper_scripts/
+│       └── coder-code-server.sh                # Reviewed static code-server helper script
+├── state/                                      # Local runtime state; ignored by Git
+└── .sops.yaml                                  # Local SOPS rules; generated and ignored by Git
+```
+
+## Operating model
+
+This repo separates bootstrap, orchestration, secrets, and service helpers.
+
+- `install.sh` prepares the local checkout, records local environment values, ensures scripts are executable, and installs Task if required.
+- `Taskfile.yml` is the control plane after installation.
+- `taskfile/passwords.Taskfile.yml` manages SOPS and age-based encrypted password files.
+- `taskfile/proxmox_scripts.Taskfile.yml` provides explicit operator entry points for reviewed helper scripts.
+- `state/` stores local runtime configuration, secrets, backups, audit reports, and generated files. It is intentionally excluded from Git.
+
+## Supported environment
+
+The bootstrap flow is currently intended for Debian/Ubuntu-family systems.
+
+The default target environments are:
+
+- `prod` → `~/app/homelab_20260501`
+- `dev` → `~/Github/homelab_20260501`
+
+The installer supports environment overrides such as `SETUP`, `TARGET_DIR`, `HOMELAB_BRANCH`, `HOMELAB_GIT_PROTOCOL`, and `NONINTERACTIVE`.
+
+## Quick start
+
+Run the installer:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/homelab_20260501/refs/heads/main/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/homelab_20260501/main/install.sh)"
 ```
+
+Then enter the repo and view the safe task list:
+
+```bash
+cd ~/app/homelab_20260501
+# or, for dev installs:
+cd ~/Github/homelab_20260501
+
+task help
+```
+
+Run the standard setup flow:
+
+```bash
+task homelab:setup
+```
+
+## Common tasks
+
+```bash
+task help
+```
+
+Shows the safe operator tasks.
+
+```bash
+task passwords:setup
+```
+
+Installs password tooling, configures SOPS and age, generates key material, creates an offline backup bundle, creates or encrypts the password file, and removes runtime plaintext files.
+
+```bash
+task passwords:edit
+```
+
+Edits the encrypted password file through SOPS using the configured editor.
+
+```bash
+task passwords:audit
+```
+
+Creates a password hygiene report without printing secret values.
+
+```bash
+task passwords:cleanup
+```
+
+Removes runtime plaintext password files and temporary decrypted files.
+
+```bash
+task proxmox_scripts:code-server:install
+```
+
+Installs code-server using either the reviewed static script in this repo or, after explicit confirmation, the latest upstream community script.
+
+## Secrets model
+
+Secrets are managed with SOPS and age.
+
+The main encrypted password file is:
+
+```text
+state/secrets/passwords/passwords.enc.env
+```
+
+Runtime plaintext files are temporary and should be removed with:
+
+```bash
+task passwords:cleanup
+```
+
+Generated key material and backup bundles live under `state/secrets/` and `state/backups/`. These are local-only and must not be committed.
+
+After running `task passwords:backup:offline`, move the backup bundle to offline storage.
+
+## Local state and generated files
+
+The following are expected to be local runtime artefacts and are ignored by Git:
+
+- `state/config/.env`
+- `state/secrets/`
+- `state/backups/`
+- `.sops.yaml`
+- plaintext runtime password files
+
+## Development notes
+
+The repo is still in active development. The current installer intentionally uses the live branch for convenience.
+
+Recommended conventions:
+
+- Put shared paths and repo-wide variables in `Taskfile.yml`.
+- Keep task-specific URLs, versions, and policy choices in the relevant included Taskfile.
+- Use strict shell handling in executable scripts and inline Taskfile shell blocks.
+- Keep destructive or plaintext-exposing tasks out of `task help`.
+
+## Licence
+
+This repository is licensed under GPL-3.0. See `LICENSE`.
