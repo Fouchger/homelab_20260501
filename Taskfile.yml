@@ -58,6 +58,7 @@ vars:
   TERMINAL_COLOURS_SCRIPT: '{{.SCRIPT_LIB_DIR}}/terminal-colours.sh'
   HEALTH_CHECK_SCRIPT: '{{.SCRIPT_LIB_DIR}}/health-check.sh'
   ANSIBLE_REQUIREMENTS_AUDIT_SCRIPT: '{{.SCRIPT_LIB_DIR}}/audit-ansible-requirements.py'
+  INVENTORY_MANAGER_SCRIPT: '{{.SCRIPT_LIB_DIR}}/inventory-manager.py'
   PROXMOX_HELPER_LXC_RUNNER: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-lxc-create.sh'
   CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
   PLEX_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/plex.sh'

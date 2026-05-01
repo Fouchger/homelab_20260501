@@ -152,7 +152,6 @@ tasks:
         # shellcheck source=/dev/null
         source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
         print_section_header "Install Ansible and recommended Galaxy content." "PEACH"
-      - task: python
       - |
         set -euo pipefail
 

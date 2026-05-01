@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import TextIO
 
@@ -71,6 +72,118 @@ def validate_env_var(value: str) -> None:
 def validate_mac(value: str) -> None:
     if value and not re.fullmatch(r'([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{12}', value):
         raise SystemExit('ERROR: MAC address must be blank or a valid 12-digit MAC address.')
+
+
+def looks_like_env_var(value: str) -> bool:
+    return bool(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', value or ''))
+
+
+def dotenv_quote(value: str) -> str:
+    escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def read_secret(handle: TextIO, prompt: str) -> str:
+    output = handle if handle.writable() else sys.stdout
+    print(f'{prompt}: ', end='', file=output, flush=True)
+    if getattr(handle, 'name', '') == '/dev/tty':
+        try:
+            subprocess.run(['stty', '-echo'], stdin=handle, check=False)
+            value = handle.readline().rstrip('\n')
+        finally:
+            subprocess.run(['stty', 'echo'], stdin=handle, check=False)
+            print('', file=output, flush=True)
+        return value
+    return handle.readline().strip()
+
+
+def command_exists(command: str) -> bool:
+    for directory in os.environ.get('PATH', '').split(os.pathsep):
+        candidate = Path(directory) / command
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return True
+    return False
+
+
+def encrypted_password_file_is_ready(password_file: Path) -> bool:
+    if not password_file.is_file():
+        return False
+    try:
+        first_chunk = password_file.read_text(encoding='utf-8', errors='ignore')[:2048]
+    except OSError:
+        return False
+    return bool(re.search(r'^(sops_|sops:)', first_chunk, re.MULTILINE))
+
+
+def save_password_value(password_file: Path, recipients_file: Path, key: str, value: str) -> bool:
+    if not value:
+        return False
+    if not looks_like_env_var(key):
+        raise SystemExit('ERROR: SSH password variable must be a valid environment variable name.')
+    if not encrypted_password_file_is_ready(password_file):
+        print(f'WARNING: Encrypted password file is not ready: {password_file}', file=sys.stderr)
+        print('         The inventory will reference the variable only. No password file was created.', file=sys.stderr)
+        return False
+    if not recipients_file.is_file():
+        print(f'WARNING: Missing SOPS recipient file: {recipients_file}', file=sys.stderr)
+        print('         The inventory will reference the variable only. No password file was created.', file=sys.stderr)
+        return False
+    if not command_exists('sops'):
+        print('WARNING: sops is not installed. The inventory will reference the variable only.', file=sys.stderr)
+        return False
+
+    recipient = recipients_file.read_text(encoding='utf-8').strip()
+    if not recipient:
+        print(f'WARNING: SOPS recipient file is blank: {recipients_file}', file=sys.stderr)
+        return False
+
+    runtime_fd, runtime_name = tempfile.mkstemp()
+    encrypted_fd, encrypted_name = tempfile.mkstemp()
+    os.close(runtime_fd)
+    os.close(encrypted_fd)
+    runtime_path = Path(runtime_name)
+    encrypted_path = Path(encrypted_name)
+
+    try:
+        decrypt = subprocess.run(
+            ['sops', '--decrypt', '--input-type', 'dotenv', '--output-type', 'dotenv', str(password_file)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if decrypt.returncode != 0:
+            print('WARNING: Unable to decrypt the encrypted password file. The inventory will reference the variable only.', file=sys.stderr)
+            return False
+
+        lines = [line for line in decrypt.stdout.splitlines() if not line.startswith(f'{key}=')]
+        lines.append(f'{key}={dotenv_quote(value)}')
+        runtime_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        os.chmod(runtime_path, 0o600)
+
+        with encrypted_path.open('w', encoding='utf-8') as output_handle:
+            encrypt = subprocess.run(
+                ['sops', '--encrypt', '--age', recipient, '--input-type', 'dotenv', '--output-type', 'dotenv', str(runtime_path)],
+                stdout=output_handle,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        if encrypt.returncode != 0:
+            print('WARNING: Unable to update the encrypted password file. The inventory will reference the variable only.', file=sys.stderr)
+            return False
+
+        # Intentionally write into the existing file path. This task never creates
+        # the encrypted password file; passwords.Taskfile.yml owns creation.
+        password_file.write_text(encrypted_path.read_text(encoding='utf-8'), encoding='utf-8')
+        os.chmod(password_file, 0o600)
+        return True
+    finally:
+        for path in (runtime_path, encrypted_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def split_suffix(value: str) -> tuple[str, str, str]:
@@ -249,7 +362,8 @@ def read_inventory(inventory_file: Path) -> tuple[dict[str, dict[str, str]], dic
 
 def add_servers(args: argparse.Namespace, interactive: bool) -> None:
     inventory_file = Path(args.inventory_file)
-    password_file = args.password_file
+    password_file = Path(args.password_file)
+    recipients_file = Path(args.recipients_file)
 
     if interactive:
         tty = terminal()
@@ -260,7 +374,24 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         first_mac_address = prompt_optional(tty, 'First MAC address')
         ssh_user = prompt_required(tty, 'SSH username')
         default_password_var = env_var_from_hostname(first_hostname)
-        first_ssh_password_var = prompt_optional(tty, f'SSH password variable in {password_file}', default_password_var)
+        first_ssh_password_var = prompt_optional(
+            tty,
+            'SSH password variable name in state/secrets/passwords/passwords.enc.env',
+            default_password_var,
+        )
+        if first_ssh_password_var and not looks_like_env_var(first_ssh_password_var):
+            first_ssh_password_value = first_ssh_password_var
+            first_ssh_password_var = default_password_var
+            output = tty if tty.writable() else sys.stdout
+            print(
+                f'Input looked like a password, not a variable name. Using variable: {first_ssh_password_var}',
+                file=output,
+            )
+        else:
+            first_ssh_password_value = read_secret(
+                tty,
+                'SSH password value to save in encrypted password file (blank to only reference existing variable)',
+            )
         python_interpreter = prompt_optional(tty, 'Python interpreter', 'auto_silent')
         check_network = True
     else:
@@ -271,6 +402,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         first_mac_address = args.mac_address or ''
         ssh_user = args.ssh_user
         first_ssh_password_var = args.ssh_password_var or ''
+        first_ssh_password_value = ''
         python_interpreter = args.python_interpreter or 'auto_silent'
         check_network = False
 
@@ -311,14 +443,17 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
             server['homelab_vm_lxc_id'] = vm_lxc_id
         if mac_address:
             server['homelab_mac_address'] = mac_address
+        password_saved = False
         if ssh_password_var:
+            if interactive and first_ssh_password_value and offset == 0:
+                password_saved = save_password_value(password_file, recipients_file, ssh_password_var, first_ssh_password_value)
             server['ansible_password'] = "{{ lookup('env', '" + ssh_password_var + "') }}"
             server['homelab_ssh_password_var'] = ssh_password_var
 
         groups[group][hostname] = server
         all_inventory_hosts.add(hostname)
         added += 1
-        report.append(('ADDED', hostname, f'group={group}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}'))
+        report.append(('ADDED', hostname, f'group={group}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
 
     if added:
         write_inventory(inventory_file, root_hosts, groups)
@@ -328,7 +463,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
     for status, hostname, detail in report:
         print(f'{status:7} {hostname:30} {detail}')
     print(f'\nInventory file: {inventory_file}')
-    print(f'Password file reference only: {password_file}')
+    print(f'Password file: {password_file} (updated only when it already exists and SOPS is ready)')
     print(f'Servers requested: {server_count}; added: {added}; skipped: {server_count - added}')
 
 
@@ -339,10 +474,12 @@ def main() -> int:
     interactive_parser = subparsers.add_parser('interactive-add')
     interactive_parser.add_argument('--inventory-file', required=True)
     interactive_parser.add_argument('--password-file', required=True)
+    interactive_parser.add_argument('--recipients-file', required=True)
 
     add_parser = subparsers.add_parser('add-server')
     add_parser.add_argument('--inventory-file', required=True)
     add_parser.add_argument('--password-file', required=True)
+    add_parser.add_argument('--recipients-file', required=True)
     add_parser.add_argument('--group', required=True)
     add_parser.add_argument('--hostname', required=True)
     add_parser.add_argument('--ssh-user', required=True)

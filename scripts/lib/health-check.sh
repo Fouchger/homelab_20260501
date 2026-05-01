@@ -10,8 +10,16 @@
 
 health_heading() {
   local title="$1"
+  local underline=""
+  local index=0
+
+  while [[ "$index" -lt "${#title}" ]]; do
+    underline="${underline}-"
+    index=$((index + 1))
+  done
+
   printf '\n%s\n' "$title"
-  printf '%s\n' "$(printf '%*s' "${#title}" '' | tr ' ' '-')"
+  printf '%s\n' "$underline"
 }
 
 health_status() {

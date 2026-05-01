@@ -43,6 +43,10 @@ tasks:
         Inventory
           task env_create:inventory:add
             Interactively add one or more servers to state/ansible/inventory.yml.
+            The SSH password prompt accepts a variable name first, then an
+            optional hidden password value. If a password is typed into the
+            variable-name prompt by mistake, the task keeps the default variable
+            name and treats the input as the password value.
 
           task env_create:inventory:add:server INVENTORY_GROUP=... INVENTORY_HOSTNAME=... INVENTORY_SSH_USER=...
             Non-interactively add or update a server. Intended for other tasks,
@@ -115,7 +119,8 @@ tasks:
 
         python3 -S "{{.INVENTORY_MANAGER_SCRIPT}}" interactive-add \
           --inventory-file "$inventory_file" \
-          --password-file "$password_file"
+          --password-file "$password_file" \
+          --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}"
 
   inventory:add:server:
     desc: Add or update a server in the Ansible inventory using task variables.
@@ -153,6 +158,7 @@ tasks:
         python3 -S "{{.INVENTORY_MANAGER_SCRIPT}}" add-server \
           --inventory-file "$inventory_file" \
           --password-file "$password_file" \
+          --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}" \
           --group "$group" \
           --hostname "$hostname" \
           --ssh-user "$ssh_user" \
