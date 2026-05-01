@@ -10,9 +10,12 @@ The repository is designed around a simple operating model: `install.sh` bootstr
 .
 ├── install.sh                                  # Bootstrap installer for Debian/Ubuntu systems
 ├── Taskfile.yml                                # Root operational entry point
+├── ansible/
+│   └── requirements.yml                        # Version-controlled Ansible Galaxy collections and roles
 ├── taskfile/
 │   ├── apps.Taskfile.yml                       # Python, pipx, Ansible, Terraform, Packer, and Galaxy content
 │   ├── github.Taskfile.yml                     # Git and GitHub CLI setup and audit tasks
+│   ├── health.Taskfile.yml                     # Consolidated health checks
 │   ├── passwords.Taskfile.yml                  # SOPS, age, password, backup, audit, and cleanup tasks
 │   ├── proxmox_scripts.Taskfile.yml            # Proxmox helper script task entry points
 │   ├── env_create.Taskfile.yml                 # Baseline state and Ansible inventory creation
@@ -21,7 +24,10 @@ The repository is designed around a simple operating model: `install.sh` bootstr
 │   ├── banner/banner.sh                        # Homelab terminal banner
 │   └── lib/
 │       ├── add_shared_drives.sh                # Interactive CIFS shared-drive helper
+│       ├── audit-ansible-requirements.py       # Requirements parser for Ansible audit output
 │       ├── ensure-executable-scripts.sh        # Script permission normalisation
+│       ├── health-check.sh                     # Shared health and audit output helpers
+│       ├── inventory-manager.py                # Ansible inventory add/update helper
 │       └── terminal-colours.sh                 # Shared terminal colour helpers
 ├── services/
 │   └── proxmox_helper_scripts/
@@ -38,6 +44,7 @@ This repo separates bootstrap, orchestration, secrets, and service helpers.
 - `Taskfile.yml` is the control plane after installation.
 - `taskfile/passwords.Taskfile.yml` manages SOPS and age-based encrypted password files.
 - `taskfile/github.Taskfile.yml` manages Git, GitHub CLI identity, authentication, and audit status.
+- `taskfile/health.Taskfile.yml` provides a consolidated operational health check.
 - `taskfile/ssh.Taskfile.yml` manages SSH client tooling, the homelab Ed25519 key, copy-id, and per-server audit status.
 - `taskfile/proxmox_scripts.Taskfile.yml` provides explicit operator entry points for reviewed helper scripts.
 - `state/` stores local runtime configuration, secrets, backups, audit reports, and generated files. It is intentionally excluded from Git.
@@ -131,13 +138,25 @@ Installs code-server using either the reviewed static script in this repo or, af
 task apps:setup
 ```
 
-Installs Python, pipx, Ansible, Terraform, Packer, common prerequisites, and recommended Ansible collections and roles for homelab automation.
+Installs Python, pipx, Ansible, Terraform, Packer, common prerequisites, and Ansible Galaxy content from `ansible/requirements.yml`.
 
 ```bash
 task apps:audit
 ```
 
-Reports installed tooling versions and recommended Ansible content status.
+Reports installed tooling versions and Ansible Galaxy content status using a consistent health output format.
+
+```bash
+task health:check
+```
+
+Runs a consolidated health check across repository files and core commands.
+
+```bash
+task health:all
+```
+
+Runs the consolidated health check plus detailed GitHub, application, SSH, and password audits.
 
 ## Secrets model
 
@@ -184,6 +203,8 @@ Recommended conventions:
 
 - Put shared paths and repo-wide variables in `Taskfile.yml`.
 - Keep task-specific URLs, versions, and policy choices in the relevant included Taskfile.
+- Keep reusable install manifests, such as Ansible Galaxy content, in committed files instead of embedded shell blocks.
+- Use `scripts/lib/health-check.sh` for consistent audit and health-check output.
 - Use strict shell handling in executable scripts and inline Taskfile shell blocks.
 - Keep destructive or plaintext-exposing tasks out of `task help`.
 

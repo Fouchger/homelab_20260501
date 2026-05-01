@@ -56,6 +56,8 @@ vars:
   BANNER_SCRIPT: '{{.SCRIPTS_DIR}}/banner/banner.sh'
   ENSURE_EXECUTABLE_SCRIPTS: '{{.SCRIPT_LIB_DIR}}/ensure-executable-scripts.sh'
   TERMINAL_COLOURS_SCRIPT: '{{.SCRIPT_LIB_DIR}}/terminal-colours.sh'
+  HEALTH_CHECK_SCRIPT: '{{.SCRIPT_LIB_DIR}}/health-check.sh'
+  ANSIBLE_REQUIREMENTS_AUDIT_SCRIPT: '{{.SCRIPT_LIB_DIR}}/audit-ansible-requirements.py'
   PROXMOX_HELPER_LXC_RUNNER: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-lxc-create.sh'
   CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
   PLEX_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/plex.sh'
@@ -73,6 +75,7 @@ includes:
   env_create: ./taskfile/env_create.Taskfile.yml
   ssh: ./taskfile/ssh.Taskfile.yml
   apps: ./taskfile/apps.Taskfile.yml
+  health: ./taskfile/health.Taskfile.yml
 
 tasks:
   default:
@@ -152,6 +155,7 @@ tasks:
         task apps:setup                 -> Install Python, pipx, Ansible, Terraform, Packer,
                                             and recommended Ansible content for this homelab.
         task apps:audit                 -> Show installed application and automation tooling status.
+        task health:check                -> Run a consolidated operational health check across core areas.
 
         --------------------------------------------------------------
         Git and Github Operations
@@ -210,6 +214,7 @@ tasks:
       - task: env_create:inventory:init
       - task: env_create:inventory:add
       - task: ssh:setup
+      - task: health:check
       - |
         set -euo pipefail
 

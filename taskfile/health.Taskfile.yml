@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+# ==============================================================================
+# File: taskfile/health.Taskfile.yml
+# Purpose:
+#   Consolidated operational health checks for the homelab control plane.
+# Notes:
+#   - Health checks must not print secret values.
+#   - This Taskfile must not create or recreate state/config/.env.
+#   - This Taskfile must not create or recreate passwords.enc.env.
+# ==============================================================================
+
+version: '3'
+
+tasks:
+  default:
+    desc: Run consolidated homelab health checks
+    cmds:
+      - task: check
+
+  check:
+    desc: Run consolidated homelab health checks
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Run consolidated homelab health checks." "PEACH"
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.HEALTH_CHECK_SCRIPT}}"
+
+        health_heading "Repository files"
+        health_file "Config environment" "{{.CONFIG_ENV_FILE}}"
+        health_file "Encrypted password file" "{{.PASSWORDS_ENCRYPTED_FILE}}"
+        health_file "Ansible inventory" "{{.ANSIBLE_INVENTORY_FILE}}"
+        health_file "Ansible requirements" "ansible/requirements.yml"
+
+        health_heading "Core commands"
+        health_command "Task" task task --version
+        health_command "Git" git git --version
+        health_command "GitHub CLI" gh gh --version
+        health_command "SOPS" sops sops --version
+        health_command "age" age age --version
+        health_command "SSH" ssh ssh -V
+        health_command "Python" python3 python3 --version
+        health_command "pipx" python3 python3 -m pipx --version
+        health_command "Ansible" ansible ansible --version
+        health_command "Terraform" terraform terraform version
+        health_command "Packer" packer packer version
+
+  all:
+    desc: Run existing detailed audits across core task areas
+    cmds:
+      - task: check
+      - task: github:audit
+      - task: apps:audit
+      - task: ssh:audit
+      - task: passwords:audit

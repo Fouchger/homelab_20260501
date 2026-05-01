@@ -1,0 +1,24 @@
+---
+# ==============================================================================
+# File: ansible/requirements.yml
+# Purpose:
+#   Ansible Galaxy content required for homelab automation.
+# Notes:
+#   - Installed by: task apps:ansible
+#   - Keep this file version controlled so collection choices are reviewable.
+# ==============================================================================
+
+collections:
+  - name: community.general
+  - name: community.docker
+  - name: ansible.posix
+  - name: effectivelywild.technitium_dns
+  - name: devopsarr.sonarr
+  - name: devopsarr.radarr
+  - name: devopsarr.lidarr
+  - name: devopsarr.readarr
+  - name: devopsarr.whisparr
+  - name: devopsarr.prowlarr
+
+roles:
+  - name: marvinpinto.docker-plex

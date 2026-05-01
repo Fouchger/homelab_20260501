@@ -344,37 +344,23 @@ tasks:
         key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
         public_key_file="${key_file}.pub"
 
-        status_ok() { printf 'OK'; }
-        status_missing() { printf 'MISSING'; }
-        status_failed() { printf 'FAILED'; }
-        status_skipped() { printf 'SKIPPED'; }
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.HEALTH_CHECK_SCRIPT}}"
 
-        echo "SSH audit"
-        echo
+        status_ok() { printf '[OK]'; }
+        status_missing() { printf '[MISSING]'; }
+        status_failed() { printf '[FAIL]'; }
+        status_skipped() { printf '[SKIPPED]'; }
 
-        printf 'ssh installed: '
-        if command -v ssh >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
-
-        printf 'ssh-copy-id installed: '
-        if command -v ssh-copy-id >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
-
-        printf 'inventory file: '
-        if [[ -f "$inventory_file" ]]; then status_ok; else status_missing; fi
-        echo " (${inventory_file})"
-
-        printf 'private key: '
-        if [[ -f "$key_file" ]]; then status_ok; else status_missing; fi
-        echo " (${key_file})"
-
-        printf 'public key: '
-        if [[ -f "$public_key_file" ]]; then status_ok; else status_missing; fi
-        echo " (${public_key_file})"
+        health_heading "SSH health"
+        health_command "ssh installed" ssh ssh -V
+        health_command "ssh-copy-id installed" ssh-copy-id ssh-copy-id -h
+        health_file "inventory file" "$inventory_file"
+        health_file "private key" "$key_file"
+        health_file "public key" "$public_key_file"
 
         if [[ -f "$public_key_file" ]]; then
-          printf 'public key type: '
-          awk '{print $1}' "$public_key_file"
+          health_ok "public key type" "$(awk '{print $1}' "$public_key_file")"
         fi
 
         if [[ ! -f "$inventory_file" ]]; then

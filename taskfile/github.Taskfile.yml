@@ -375,13 +375,8 @@ tasks:
         runtime_file="{{.PASSWORDS_RUNTIME_FILE}}"
         trap 'rm -f "{{.PASSWORDS_RUNTIME_FILE}}"' EXIT
 
-        status_ok() {
-          printf 'OK'
-        }
-
-        status_missing() {
-          printf 'MISSING'
-        }
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.HEALTH_CHECK_SCRIPT}}"
 
         config_has_key() {
           local key="$1"
@@ -402,42 +397,21 @@ tasks:
           fi
         }
 
-        echo "Git and GitHub audit"
-        echo
+        health_heading "Git and GitHub health"
+        if command -v git >/dev/null 2>&1; then health_ok "git installed" "$(git --version)"; else health_missing "git installed"; fi
+        if command -v gh >/dev/null 2>&1; then health_ok "gh installed" "$(gh --version | head -n 1)"; else health_missing "gh installed"; fi
 
-        printf 'git installed: '
-        if command -v git >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
+        if [[ -n "$(git config --global user.name 2>/dev/null || true)" ]]; then health_ok "Git user.name"; else health_missing "Git user.name"; fi
+        if [[ -n "$(git config --global user.email 2>/dev/null || true)" ]]; then health_ok "Git user.email"; else health_missing "Git user.email"; fi
+        if config_has_key "{{.GITHUB_USERNAME_KEY}}"; then health_ok "{{.GITHUB_USERNAME_KEY}} in config"; else health_missing "{{.GITHUB_USERNAME_KEY}} in config"; fi
 
-        printf 'gh installed: '
-        if command -v gh >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
-
-        printf 'Git user.name: '
-        if [[ -n "$(git config --global user.name 2>/dev/null || true)" ]]; then status_ok; else status_missing; fi
-        echo
-
-        printf 'Git user.email: '
-        if [[ -n "$(git config --global user.email 2>/dev/null || true)" ]]; then status_ok; else status_missing; fi
-        echo
-
-        printf '{{.GITHUB_USERNAME_KEY}} in config: '
-        if config_has_key "{{.GITHUB_USERNAME_KEY}}"; then status_ok; else status_missing; fi
-        echo
-
-        printf '{{.GITHUB_TOKEN_KEY}} source: '
         if encrypted_has_key "{{.GITHUB_TOKEN_KEY}}"; then
-          echo "encrypted password file"
+          health_ok "{{.GITHUB_TOKEN_KEY}} source" "encrypted password file"
         elif config_has_key "{{.GITHUB_TOKEN_KEY}}"; then
-          echo "local config file"
+          health_warn "{{.GITHUB_TOKEN_KEY}} source" "local config file"
         else
-          echo "MISSING"
+          health_missing "{{.GITHUB_TOKEN_KEY}} source"
         fi
 
-        printf 'GitHub CLI authenticated: '
-        if command -v gh >/dev/null 2>&1 && gh auth status -h github.com >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
-
-        printf 'Git credential helper: '
-        if git config --global --get credential.https://github.com.helper >/dev/null 2>&1 || git config --global --get credential.helper >/dev/null 2>&1; then status_ok; else status_missing; fi
-        echo
+        if command -v gh >/dev/null 2>&1 && gh auth status -h github.com >/dev/null 2>&1; then health_ok "GitHub CLI authenticated"; else health_missing "GitHub CLI authenticated"; fi
+        if git config --global --get credential.https://github.com.helper >/dev/null 2>&1 || git config --global --get credential.helper >/dev/null 2>&1; then health_ok "Git credential helper"; else health_missing "Git credential helper"; fi
