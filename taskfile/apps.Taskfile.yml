@@ -1,0 +1,353 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+# =============================================================================
+# File: taskfile/apps.Taskfile.yml
+# Purpose:
+#   Install and audit core homelab applications and automation tooling.
+# Notes:
+#   - This Taskfile must not create state/config/.env.
+#   - This Taskfile must not create state/secrets/passwords/passwords.enc.env.
+#   - Application install steps follow the official upstream installation paths
+#     for Debian/Ubuntu-family systems where practical.
+# =============================================================================
+
+version: '3'
+
+vars:
+  HASHICORP_KEYRING: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  HASHICORP_APT_LIST: /etc/apt/sources.list.d/hashicorp.list
+
+tasks:
+  default:
+    desc: Show available application tasks
+    cmds:
+      - task: tasklist
+
+  tasklist:
+    desc: Show available application tasks
+    cmds:
+      - task --taskfile "{{.TASKFILE}}" --list
+
+  help:
+    desc: Show safe application setup tasks
+    cmds:
+      - |
+        set -euo pipefail
+
+        cat <<'EOHELP'
+        Safe application task help
+
+        Setup
+          task apps:setup
+            Install Python, pipx, Ansible, Terraform, Packer, supporting packages,
+            and recommended Ansible content for this homelab.
+
+        Install
+          task apps:prerequisites
+            Install common Debian/Ubuntu prerequisites used by the app installers.
+
+          task apps:python
+            Install Python 3, pip, venv, setuptools, wheel, and pipx.
+
+          task apps:ansible
+            Install Ansible with pipx and install recommended collections and roles.
+
+          task apps:hashicorp:repo
+            Configure the official HashiCorp apt repository.
+
+          task apps:terraform
+            Install Terraform from the official HashiCorp apt repository.
+
+          task apps:packer
+            Install Packer from the official HashiCorp apt repository.
+
+        Audit
+          task apps:audit
+            Report installed versions and Ansible content status.
+        EOHELP
+
+  setup:
+    desc: Install Python, pipx, Ansible, Terraform, Packer, and recommended Ansible content.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install homelab applications and automation tooling." "PEACH"
+      - task: prerequisites
+      - task: python
+      - task: ansible
+      - task: terraform
+      - task: packer
+      - task: audit
+
+  prerequisites:
+    desc: Install common Debian/Ubuntu prerequisites used by app installers.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install common application prerequisites." "PEACH"
+      - |
+        set -euo pipefail
+
+        require_sudo() {
+          if [[ "${EUID}" -eq 0 ]]; then
+            SUDO=""
+          else
+            SUDO="sudo"
+          fi
+        }
+
+        require_sudo
+        $SUDO apt-get update -y
+        $SUDO apt-get install -y \
+          ca-certificates \
+          curl \
+          gpg \
+          gnupg \
+          lsb-release \
+          nmap \
+          openssh-client \
+          python3-apt \
+          software-properties-common \
+          unzip \
+          wget
+
+  python:
+    desc: Install Python 3, pip, venv, setuptools, wheel, and pipx.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install Python, pip, venv, and pipx." "PEACH"
+      - |
+        set -euo pipefail
+
+        require_sudo() {
+          if [[ "${EUID}" -eq 0 ]]; then
+            SUDO=""
+          else
+            SUDO="sudo"
+          fi
+        }
+
+        require_sudo
+        $SUDO apt-get update -y
+        $SUDO apt-get install -y \
+          python3 \
+          python3-pip \
+          python3-setuptools \
+          python3-venv \
+          pipx
+
+        python3 -m pipx ensurepath || true
+        export PATH="${HOME}/.local/bin:${PATH}"
+
+        echo "Installed Python tooling:"
+        python3 --version
+        python3 -m pip --version
+        python3 -m pipx --version
+
+  ansible:
+    desc: Install Ansible with pipx and install recommended collections and roles.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install Ansible and recommended Galaxy content." "PEACH"
+      - task: python
+      - |
+        set -euo pipefail
+
+        export PATH="${HOME}/.local/bin:${PATH}"
+
+        if ! command -v ansible >/dev/null 2>&1; then
+          python3 -m pipx install --include-deps ansible
+        else
+          echo "Ansible already installed: $(ansible --version | head -n 1)"
+        fi
+
+        python3 -m pipx inject ansible netaddr jmespath passlib requests || true
+
+        echo "Installing recommended Ansible collections..."
+        while IFS= read -r collection; do
+          [[ -z "$collection" ]] && continue
+          ansible-galaxy collection install "$collection"
+        done <<'EOCOLLECTIONS'
+        community.general
+        community.docker
+        ansible.posix
+        effectivelywild.technitium_dns
+        devopsarr.sonarr
+        devopsarr.radarr
+        devopsarr.lidarr
+        devopsarr.readarr
+        devopsarr.whisparr
+        devopsarr.prowlarr
+        EOCOLLECTIONS
+
+        echo "Installing recommended Ansible roles..."
+        while IFS= read -r role; do
+          [[ -z "$role" ]] && continue
+          ansible-galaxy role install "$role"
+        done <<'EOROLES'
+        marvinpinto.docker-plex
+        EOROLES
+
+        echo "Installed Ansible version:"
+        ansible --version | head -n 1
+
+  hashicorp:repo:
+    desc: Configure the official HashiCorp apt repository.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Configure the official HashiCorp apt repository." "PEACH"
+      - |
+        set -euo pipefail
+
+        require_sudo() {
+          if [[ "${EUID}" -eq 0 ]]; then
+            SUDO=""
+          else
+            SUDO="sudo"
+          fi
+        }
+
+        require_sudo
+        $SUDO apt-get update -y
+        $SUDO apt-get install -y gnupg software-properties-common wget lsb-release
+
+        wget -O- https://apt.releases.hashicorp.com/gpg \
+          | gpg --dearmor \
+          | $SUDO tee "{{.HASHICORP_KEYRING}}" >/dev/null
+
+        release_codename="$(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || true)"
+        if [[ -z "$release_codename" ]]; then
+          release_codename="$(lsb_release -cs)"
+        fi
+
+        echo "deb [arch=$(dpkg --print-architecture) signed-by={{.HASHICORP_KEYRING}}] https://apt.releases.hashicorp.com ${release_codename} main" \
+          | $SUDO tee "{{.HASHICORP_APT_LIST}}" >/dev/null
+
+        $SUDO apt-get update -y
+
+  terraform:
+    desc: Install Terraform from the official HashiCorp apt repository.
+    cmds:
+      - task: hashicorp:repo
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install Terraform from the official HashiCorp apt repository." "PEACH"
+      - |
+        set -euo pipefail
+
+        if [[ "${EUID}" -eq 0 ]]; then
+          SUDO=""
+        else
+          SUDO="sudo"
+        fi
+
+        $SUDO apt-get install -y terraform
+        terraform version | head -n 1
+
+  packer:
+    desc: Install Packer from the official HashiCorp apt repository.
+    cmds:
+      - task: hashicorp:repo
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Install Packer from the official HashiCorp apt repository." "PEACH"
+      - |
+        set -euo pipefail
+
+        if [[ "${EUID}" -eq 0 ]]; then
+          SUDO=""
+        else
+          SUDO="sudo"
+        fi
+
+        $SUDO apt-get install -y packer
+        packer version
+
+  audit:
+    desc: Report installed versions and Ansible content status.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Audit application and automation tooling." "PEACH"
+      - |
+        set -euo pipefail
+
+        export PATH="${HOME}/.local/bin:${PATH}"
+
+        report_tool() {
+          local name="$1"
+          shift
+          if command -v "$name" >/dev/null 2>&1; then
+            printf '[OK] %s: ' "$name"
+            "$@" | head -n 1
+          else
+            printf '[MISSING] %s\n' "$name"
+          fi
+        }
+
+        report_tool python3 python3 --version
+        report_tool pip3 pip3 --version
+        report_tool pipx python3 -m pipx --version
+        report_tool ansible ansible --version
+        report_tool ansible-galaxy ansible-galaxy --version
+        report_tool terraform terraform version
+        report_tool packer packer version
+        report_tool nmap nmap --version
+
+        if command -v ansible-galaxy >/dev/null 2>&1; then
+          echo
+          echo "Recommended Ansible collections:"
+          while IFS= read -r collection; do
+            [[ -z "$collection" ]] && continue
+            if ansible-galaxy collection list "$collection" >/dev/null 2>&1; then
+              echo "[OK] ${collection}"
+            else
+              echo "[MISSING] ${collection}"
+            fi
+          done <<'EOCOLLECTIONS' > './state/ansible/collections.yml'
+          ---
+          collections:
+            - name: community.general
+            - name: community.docker
+            - name: ansible.posix
+            - name: effectivelywild.technitium_dns
+            - name: devopsarr.sonarr
+            - name: devopsarr.radarr
+            - name: devopsarr.lidarr
+            - name: devopsarr.readarr
+            - name: devopsarr.whisparr
+            - name: devopsarr.prowlarr
+          EOCOLLECTIONS
+
+          echo
+          echo "Recommended Ansible roles:"
+          while IFS= read -r role; do
+            [[ -z "$role" ]] && continue
+            if ansible-galaxy role list | grep -Fq "$role"; then
+              echo "[OK] ${role}"
+            else
+              echo "[MISSING] ${role}"
+            fi
+          done <<'EOROLES'
+          marvinpinto.docker-plex
+          EOROLES
+        fi

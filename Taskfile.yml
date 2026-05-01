@@ -41,6 +41,17 @@ vars:
   SOPS_CONFIG_FILE: .sops.yaml
   INSTALL_STATE_FILE: '{{.SOPS_DIR}}/install-state.env'
 
+  # Ansible inventory paths
+  ANSIBLE_DIR: '{{.STATE_DIR}}/ansible'
+  ANSIBLE_INVENTORY_FILE: '{{.ANSIBLE_DIR}}/inventory.yml'
+
+  # SSH configuration
+  SSH_KEY_FILE: '${HOME}/.ssh/homelab_ed25519'
+  SSH_KEY_COMMENT: 'homelab_20260501'
+  SSH_KEY_BACKUP_DIR: '{{.BACKUP_DIR}}/ssh'
+  SSH_KEY_FILE_KEY: HOMELAB_SSH_KEY_FILE
+  SSH_KEY_COMMENT_KEY: HOMELAB_SSH_KEY_COMMENT
+
   # Shared script paths
   BANNER_SCRIPT: '{{.SCRIPTS_DIR}}/banner/banner.sh'
   ENSURE_EXECUTABLE_SCRIPTS: '{{.SCRIPT_LIB_DIR}}/ensure-executable-scripts.sh'
@@ -59,6 +70,9 @@ includes:
   proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
   passwords: ./taskfile/passwords.Taskfile.yml
   github: ./taskfile/github.Taskfile.yml
+  env_create: ./taskfile/env_create.Taskfile.yml
+  ssh: ./taskfile/ssh.Taskfile.yml
+  apps: ./taskfile/apps.Taskfile.yml
 
 tasks:
   default:
@@ -133,12 +147,42 @@ tasks:
                                                     community script.
 
         --------------------------------------------------------------
+        Application and automation tooling
+        --------------------------------------------------------------
+        task apps:setup                 -> Install Python, pipx, Ansible, Terraform, Packer,
+                                            and recommended Ansible content for this homelab.
+        task apps:audit                 -> Show installed application and automation tooling status.
+
+        --------------------------------------------------------------
         Git and Github Operations
         --------------------------------------------------------------
         task github:setup                -> Install Git and GitHub CLI, configure Git identity, authenticate
                                             GitHub CLI, and report status.
         task github:audit                -> Show Git, gh, identity, token-source, and authentication status
                                             without printing secrets.
+
+        --------------------------------------------------------------
+        SSH Operations
+        --------------------------------------------------------------
+        task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
+                                            host definition.
+        task ssh:setup                   -> Install SSH tooling, initialise the Ansible inventory if missing,
+                                            create the homelab Ed25519 key if missing, copy it to inventory
+                                            hosts where needed, and report status.
+        task ssh:key:recycle             -> Back up the current homelab SSH key and create a replacement.
+        task ssh:copy-id                 -> Copy the homelab public key to inventory hosts when needed.
+        task ssh:audit                   -> Show key and per-server passwordless SSH status.
+
+        --------------------------------------------------------------
+        Ansible Operations
+        --------------------------------------------------------------
+        task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
+                                            host definition.
+        task env_create:inventory:add     -> Interactively add or update a grouped server in the Ansible
+                                            inventory, including VM/LXC ID, MAC address, SSH user, password
+                                            variable reference, and Python interpreter discovery mode.
+        task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
+                                            using task variables for automation and other tasks.
 
         --------------------------------------------------------------
         Not listed here
@@ -162,6 +206,10 @@ tasks:
       - task: proxmox_scripts:code-server:install
       - task: passwords:setup
       - task: github:setup
+      - task: apps:setup
+      - task: env_create:inventory:init
+      - task: env_create:inventory:add
+      - task: ssh:setup
       - |
         set -euo pipefail
 

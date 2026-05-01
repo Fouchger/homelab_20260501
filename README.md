@@ -11,8 +11,12 @@ The repository is designed around a simple operating model: `install.sh` bootstr
 ├── install.sh                                  # Bootstrap installer for Debian/Ubuntu systems
 ├── Taskfile.yml                                # Root operational entry point
 ├── taskfile/
+│   ├── apps.Taskfile.yml                       # Python, pipx, Ansible, Terraform, Packer, and Galaxy content
+│   ├── github.Taskfile.yml                     # Git and GitHub CLI setup and audit tasks
 │   ├── passwords.Taskfile.yml                  # SOPS, age, password, backup, audit, and cleanup tasks
-│   └── proxmox_scripts.Taskfile.yml            # Proxmox helper script task entry points
+│   ├── proxmox_scripts.Taskfile.yml            # Proxmox helper script task entry points
+│   ├── env_create.Taskfile.yml                 # Baseline state and Ansible inventory creation
+│   └── ssh.Taskfile.yml                        # SSH key, copy-id, and audit tasks
 ├── scripts/
 │   ├── banner/banner.sh                        # Homelab terminal banner
 │   └── lib/
@@ -33,6 +37,8 @@ This repo separates bootstrap, orchestration, secrets, and service helpers.
 - `install.sh` prepares the local checkout, records local environment values, ensures scripts are executable, and installs Task if required.
 - `Taskfile.yml` is the control plane after installation.
 - `taskfile/passwords.Taskfile.yml` manages SOPS and age-based encrypted password files.
+- `taskfile/github.Taskfile.yml` manages Git, GitHub CLI identity, authentication, and audit status.
+- `taskfile/ssh.Taskfile.yml` manages SSH client tooling, the homelab Ed25519 key, copy-id, and per-server audit status.
 - `taskfile/proxmox_scripts.Taskfile.yml` provides explicit operator entry points for reviewed helper scripts.
 - `state/` stores local runtime configuration, secrets, backups, audit reports, and generated files. It is intentionally excluded from Git.
 
@@ -104,10 +110,34 @@ task passwords:cleanup
 Removes runtime plaintext password files and temporary decrypted files.
 
 ```bash
+task ssh:setup
+```
+
+Installs SSH client tooling, calls `env_create:inventory:init` to create `state/ansible/inventory.yml` if missing, creates the homelab Ed25519 key if missing, copies the public key to remote inventory hosts when needed, and reports per-server status.
+
+```bash
+task ssh:audit
+```
+
+Reports SSH key status and passwordless SSH status for each server in the inventory.
+
+```bash
 task proxmox_scripts:code-server:install
 ```
 
 Installs code-server using either the reviewed static script in this repo or, after explicit confirmation, the latest upstream community script.
+
+```bash
+task apps:setup
+```
+
+Installs Python, pipx, Ansible, Terraform, Packer, common prerequisites, and recommended Ansible collections and roles for homelab automation.
+
+```bash
+task apps:audit
+```
+
+Reports installed tooling versions and recommended Ansible content status.
 
 ## Secrets model
 
@@ -134,10 +164,17 @@ After running `task passwords:backup:offline`, move the backup bundle to offline
 The following are expected to be local runtime artefacts and are ignored by Git:
 
 - `state/config/.env`
+- `state/ansible/inventory.yml`
 - `state/secrets/`
 - `state/backups/`
 - `.sops.yaml`
 - plaintext runtime password files
+
+## File ownership rules
+
+- `install.sh` is the only creator of `state/config/.env`. Other tasks may update it only when it already exists.
+- `taskfile/passwords.Taskfile.yml` is the only creator of `state/secrets/passwords/passwords.enc.env`. Other tasks may update it only when it already exists and is a valid SOPS file.
+- `taskfile/env_create.Taskfile.yml` may create `state/ansible/inventory.yml` when it is missing.
 
 ## Development notes
 
