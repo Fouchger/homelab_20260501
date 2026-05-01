@@ -138,8 +138,11 @@ tasks:
         set -euo pipefail
 
         config_file="{{.CONFIG_ENV_FILE}}"
-        mkdir -p "{{.CONFIG_DIR}}"
-        touch "$config_file"
+        if [[ ! -f "$config_file" ]]; then
+          echo "ERROR: Missing config file: ${config_file}" >&2
+          echo "Run ./install.sh first. Only install.sh may create this file." >&2
+          exit 1
+        fi
         chmod 600 "$config_file"
 
         env_quote() {
@@ -157,11 +160,19 @@ tasks:
         set_config_value() {
           local key="$1"
           local value="$2"
-          local tmp_file
-          tmp_file="$(mktemp)"
-          grep -v -E "^${key}=" "$config_file" > "$tmp_file" || true
-          printf '%s=%s\n' "$key" "$(env_quote "$value")" >> "$tmp_file"
-          mv "$tmp_file" "$config_file"
+          local quoted_value
+          quoted_value="$(env_quote "$value")"
+          CONFIG_FILE="$config_file" CONFIG_KEY="$key" CONFIG_VALUE="$quoted_value" perl -0pi -e '
+            my $key = $ENV{"CONFIG_KEY"};
+            my $value = $ENV{"CONFIG_VALUE"};
+            my $line = "$key=$value\n";
+            if (s/^\Q$key\E=.*/$line/m) {
+              # Existing value updated in place.
+            } else {
+              $_ .= "\n" if length($_) && $_ !~ /\n\z/;
+              $_ .= $line;
+            }
+          ' "$config_file"
           chmod 600 "$config_file"
         }
 
@@ -219,8 +230,11 @@ tasks:
         config_file="{{.CONFIG_ENV_FILE}}"
         encrypted_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
         runtime_file="{{.PASSWORDS_RUNTIME_FILE}}"
-        mkdir -p "{{.CONFIG_DIR}}" "{{.PASSWORDS_DIR}}"
-        touch "$config_file"
+        if [[ ! -f "$config_file" ]]; then
+          echo "ERROR: Missing config file: ${config_file}" >&2
+          echo "Run ./install.sh first. Only install.sh may create this file." >&2
+          exit 1
+        fi
         chmod 600 "$config_file"
         trap 'rm -f "{{.PASSWORDS_RUNTIME_FILE}}"' EXIT
 
@@ -239,11 +253,19 @@ tasks:
         set_config_value() {
           local key="$1"
           local value="$2"
-          local tmp_file
-          tmp_file="$(mktemp)"
-          grep -v -E "^${key}=" "$config_file" > "$tmp_file" || true
-          printf '%s=%s\n' "$key" "$(env_quote "$value")" >> "$tmp_file"
-          mv "$tmp_file" "$config_file"
+          local quoted_value
+          quoted_value="$(env_quote "$value")"
+          CONFIG_FILE="$config_file" CONFIG_KEY="$key" CONFIG_VALUE="$quoted_value" perl -0pi -e '
+            my $key = $ENV{"CONFIG_KEY"};
+            my $value = $ENV{"CONFIG_VALUE"};
+            my $line = "$key=$value\n";
+            if (s/^\Q$key\E=.*/$line/m) {
+              # Existing value updated in place.
+            } else {
+              $_ .= "\n" if length($_) && $_ !~ /\n\z/;
+              $_ .= $line;
+            }
+          ' "$config_file"
           chmod 600 "$config_file"
         }
 
@@ -266,17 +288,20 @@ tasks:
             return 1
           fi
 
-          if [[ -f "$encrypted_file" ]] && grep -Eq '^(sops_|sops:)' "$encrypted_file"; then
-            sops --decrypt --input-type dotenv --output-type dotenv "$encrypted_file" > "$runtime_file"
-          else
-            : > "$runtime_file"
+          if [[ ! -f "$encrypted_file" ]] || ! grep -Eq '^(sops_|sops:)' "$encrypted_file"; then
+            return 1
           fi
+
+          sops --decrypt --input-type dotenv --output-type dotenv "$encrypted_file" > "$runtime_file"
 
           grep -v -E "^${key}=" "$runtime_file" > "$tmp_file" || true
           printf '%s=%s\n' "$key" "$(env_quote "$value")" >> "$tmp_file"
-          mv "$tmp_file" "$runtime_file"
+          cat "$tmp_file" > "$runtime_file"
+          rm -f "$tmp_file"
           chmod 600 "$runtime_file"
-          sops --encrypt --age "$(cat '{{.SOPS_AGE_RECIPIENTS_FILE}}')" --input-type dotenv --output-type dotenv "$runtime_file" > "$encrypted_file"
+          sops --encrypt --age "$(cat '{{.SOPS_AGE_RECIPIENTS_FILE}}')" --input-type dotenv --output-type dotenv "$runtime_file" > "$tmp_file"
+          cat "$tmp_file" > "$encrypted_file"
+          rm -f "$tmp_file"
           chmod 600 "$encrypted_file"
         }
 
