@@ -1,0 +1,13 @@
+# ==============================================================================
+# File: terraform/proxmox/community-scripts-lxc/examples/terraform.tfvars.example
+# Purpose:
+#   Example non-secret Terraform variables for the Proxmox SSH target.
+# Notes:
+#   - Prefer Taskfile tasks, which map values from state/config/.env.
+# ============================================================================== 
+
+proxmox_host                 = "192.168.20.10"
+proxmox_ssh_user             = "root"
+proxmox_ssh_port             = 22
+proxmox_ssh_private_key_file = "~/.ssh/homelab_ed25519"
+destroy_lxc_on_terraform_destroy = true

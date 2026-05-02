@@ -267,3 +267,36 @@ task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
 ```
 
 The task writes an advisory report to `state/ansible/discovery-report.txt`. It does not modify the inventory automatically; add selected hosts with `task env_create:inventory:add`.
+
+## Terraform LXC deployment
+
+This repository includes a Terraform stack for deploying Proxmox LXCs through the Proxmox Community Scripts while keeping secrets local-only.
+
+```bash
+cp terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json.example terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
+cp terraform/proxmox/community-scripts-lxc/examples/secrets.auto.tfvars.example terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars
+```
+
+Update the local `secrets.auto.tfvars` file with the required password values. It is ignored by Git.
+
+Run through Taskfile from the repository root:
+
+```bash
+task terraform:lxc:init
+task terraform:lxc:plan
+task terraform:lxc:apply
+```
+
+Destroy Terraform-created LXCs only:
+
+```bash
+task terraform:lxc:destroy
+```
+
+Destroy one Terraform-created LXC:
+
+```bash
+task terraform:lxc:destroy:target TERRAFORM_LXC_TARGET=plex01
+```
+
+Existing containers skipped during `apply` are preserved during `destroy` because the Terraform workflow only destroys LXCs with a creation marker on the Proxmox host.

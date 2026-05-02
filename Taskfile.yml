@@ -87,6 +87,7 @@ includes:
   health: ./taskfile/health.Taskfile.yml
   ansible: ./taskfile/ansible.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
+  terraform: ./taskfile/terraform.Taskfile.yml
 
 tasks:
   default:
@@ -185,6 +186,14 @@ tasks:
         task ansible:ping                -> Run ansible all -m ping using the homelab inventory.
 
         --------------------------------------------------------------
+        Terraform Operations
+        --------------------------------------------------------------
+        task terraform:lxc:init           -> Initialise the Proxmox Community Scripts LXC Terraform stack.
+        task terraform:lxc:plan           -> Plan LXC deployments using Proxmox SSH settings from state/config/.env.
+        task terraform:lxc:apply          -> Apply LXC deployments using limited parallelism.
+        task terraform:lxc:destroy        -> Destroy Terraform-created LXCs while preserving skipped existing containers.
+
+        --------------------------------------------------------------
         Ansible Operations
         --------------------------------------------------------------
         task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
@@ -235,6 +244,9 @@ tasks:
       - task: proxmox:host:configure
       - task: ssh:setup
       - task: proxmox:api:ensure
+      - task: terraform:lxc:init
+      - task: terraform:lxc:plan
+      - task: terraform:lxc:apply
       - |
         set -euo pipefail
 

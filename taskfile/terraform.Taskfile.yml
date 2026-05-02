@@ -1,0 +1,190 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+# ==============================================================================
+# File: taskfile/terraform.Taskfile.yml
+# Purpose:
+#   Run Terraform workflows owned by the homelab repository.
+# Notes:
+#   - This Taskfile must not create state/config/.env.
+#   - Terraform secrets must be supplied by local-only *.auto.tfvars files or
+#     environment variables.
+#   - Destructive tasks are explicit and never run from default/help tasks.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+vars:
+  TERRAFORM_LXC_DIR: terraform/proxmox/community-scripts-lxc
+  TERRAFORM_PARALLELISM: '{{.TERRAFORM_PARALLELISM | default "2"}}'
+  TERRAFORM_LXC_TARGET: '{{.TERRAFORM_LXC_TARGET | default ""}}'
+
+tasks:
+  default:
+    desc: Show available Terraform tasks
+    cmds:
+      - task: tasklist
+
+  tasklist:
+    desc: Show available Terraform tasks
+    cmds:
+      - task --taskfile '{{.TASKFILE}}' --list
+
+  help:
+    desc: Show safe Terraform task help
+    cmds:
+      - |
+        set -euo pipefail
+
+        cat <<'EOHELP'
+        Safe Terraform task help
+
+        LXC deployment
+          task terraform:lxc:init
+            Initialise the Proxmox Community Scripts LXC Terraform directory.
+
+          task terraform:lxc:plan
+            Plan LXC deployment using Proxmox SSH settings from state/config/.env.
+
+          task terraform:lxc:apply
+            Apply LXC deployment using limited parallelism.
+
+          task terraform:lxc:destroy
+            Destroy Terraform-created LXCs. Existing skipped LXCs are preserved.
+
+          task terraform:lxc:destroy:target TERRAFORM_LXC_TARGET=dns01
+            Destroy one Terraform-created LXC resource by logical hostname.
+        EOHELP
+
+  lxc:init:
+    desc: Initialise the Proxmox Community Scripts LXC Terraform directory.
+    cmds:
+      - |
+        set -euo pipefail
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' init
+
+  lxc:fmt:
+    desc: Format the Proxmox Community Scripts LXC Terraform files.
+    cmds:
+      - |
+        set -euo pipefail
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' fmt -recursive
+
+  lxc:validate:
+    desc: Validate the Proxmox Community Scripts LXC Terraform configuration.
+    deps:
+      - lxc:init
+    cmds:
+      - |
+        set -euo pipefail
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' validate
+
+  lxc:plan:
+    desc: Plan Proxmox Community Scripts LXC deployment.
+    deps:
+      - lxc:init
+    cmds:
+      - |
+        set -euo pipefail
+
+        proxmox_host="${PROXMOX_SSH_HOST:-${PROXMOX_HOST_IP:-}}"
+        proxmox_user="${PROXMOX_SSH_USER:-root}"
+        proxmox_port="${PROXMOX_SSH_PORT:-22}"
+        ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ -z "$proxmox_host" ]]; then
+          echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
+          echo '       Run: task proxmox:host:configure' >&2
+          exit 1
+        fi
+
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' plan \
+          -var="proxmox_host=${proxmox_host}" \
+          -var="proxmox_ssh_user=${proxmox_user}" \
+          -var="proxmox_ssh_port=${proxmox_port}" \
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+
+  lxc:apply:
+    desc: Apply Proxmox Community Scripts LXC deployment.
+    deps:
+      - lxc:init
+    cmds:
+      - |
+        set -euo pipefail
+
+        proxmox_host="${PROXMOX_SSH_HOST:-${PROXMOX_HOST_IP:-}}"
+        proxmox_user="${PROXMOX_SSH_USER:-root}"
+        proxmox_port="${PROXMOX_SSH_PORT:-22}"
+        ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ -z "$proxmox_host" ]]; then
+          echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
+          echo '       Run: task proxmox:host:configure' >&2
+          exit 1
+        fi
+
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' apply \
+          -parallelism='{{.TERRAFORM_PARALLELISM}}' \
+          -var="proxmox_host=${proxmox_host}" \
+          -var="proxmox_ssh_user=${proxmox_user}" \
+          -var="proxmox_ssh_port=${proxmox_port}" \
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+
+  lxc:destroy:
+    desc: Destroy Terraform-created Proxmox Community Scripts LXCs.
+    deps:
+      - lxc:init
+    cmds:
+      - |
+        set -euo pipefail
+
+        proxmox_host="${PROXMOX_SSH_HOST:-${PROXMOX_HOST_IP:-}}"
+        proxmox_user="${PROXMOX_SSH_USER:-root}"
+        proxmox_port="${PROXMOX_SSH_PORT:-22}"
+        ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ -z "$proxmox_host" ]]; then
+          echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
+          echo '       Run: task proxmox:host:configure' >&2
+          exit 1
+        fi
+
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' destroy \
+          -parallelism='{{.TERRAFORM_PARALLELISM}}' \
+          -var="proxmox_host=${proxmox_host}" \
+          -var="proxmox_ssh_user=${proxmox_user}" \
+          -var="proxmox_ssh_port=${proxmox_port}" \
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+
+  lxc:destroy:target:
+    desc: Destroy one Terraform-created LXC by logical hostname.
+    deps:
+      - lxc:init
+    cmds:
+      - |
+        set -euo pipefail
+
+        target='{{.TERRAFORM_LXC_TARGET}}'
+        proxmox_host="${PROXMOX_SSH_HOST:-${PROXMOX_HOST_IP:-}}"
+        proxmox_user="${PROXMOX_SSH_USER:-root}"
+        proxmox_port="${PROXMOX_SSH_PORT:-22}"
+        ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ -z "$target" ]]; then
+          echo 'ERROR: TERRAFORM_LXC_TARGET is required, for example TERRAFORM_LXC_TARGET=dns01.' >&2
+          exit 1
+        fi
+
+        if [[ -z "$proxmox_host" ]]; then
+          echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
+          echo '       Run: task proxmox:host:configure' >&2
+          exit 1
+        fi
+
+        terraform -chdir='{{.TERRAFORM_LXC_DIR}}' destroy \
+          -target="null_resource.community_script_lxc[\"${target}\"]" \
+          -var="proxmox_host=${proxmox_host}" \
+          -var="proxmox_ssh_user=${proxmox_user}" \
+          -var="proxmox_ssh_port=${proxmox_port}" \
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
