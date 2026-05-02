@@ -1,0 +1,22 @@
+---
+# ==============================================================================
+# File: ansible/playbooks/plex-configure.yml
+# Purpose:
+#   Configure homelab Plex servers using reusable Ansible roles.
+# Notes:
+#   - Intended target group: plex.
+#   - Runtime values are sourced from state/config/.env and the SOPS encrypted
+#     password file before ansible-playbook is launched by Task.
+# ==============================================================================
+
+- name: Configure homelab Plex servers
+  hosts: "{{ homelab_plex_target_hosts | default('plex') }}"
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: homelab_shared_drives
+      when: homelab_shared_drives_enabled | bool
+
+    - role: plex_server
+      when: homelab_plex_configure_enabled | bool

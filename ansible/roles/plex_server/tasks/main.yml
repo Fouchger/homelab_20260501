@@ -1,0 +1,65 @@
+---
+# ==============================================================================
+# File: ansible/roles/plex_server/tasks/main.yml
+# Purpose:
+#   Claim Plex Media Server and ensure the service is running.
+# ==============================================================================
+
+- name: Install packages required for Plex configuration
+  ansible.builtin.apt:
+    name:
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Ensure Plex Media Server service is enabled and running
+  ansible.builtin.service:
+    name: "{{ homelab_plex_service_name }}"
+    state: started
+    enabled: true
+
+- name: Validate Plex claim token is available when claiming is enabled
+  ansible.builtin.assert:
+    that:
+      - homelab_plex_claim_token | length > 0
+    fail_msg: "Set PLEX_CLAIM_TOKEN to a fresh token from https://www.plex.tv/claim before claiming Plex."
+  no_log: true
+  when: homelab_plex_claim_enabled | bool
+
+- name: Wait for Plex local API to respond
+  ansible.builtin.wait_for:
+    host: "{{ homelab_plex_host }}"
+    port: "{{ homelab_plex_port }}"
+    timeout: "{{ homelab_plex_api_timeout }}"
+  when: homelab_plex_claim_enabled | bool
+
+- name: Claim Plex server with the supplied claim token
+  ansible.builtin.uri:
+    url: "{{ homelab_plex_claim_url }}"
+    method: POST
+    status_code:
+      - 200
+      - 201
+      - 204
+      - 400
+      - 401
+      - 409
+    return_content: true
+  register: homelab_plex_claim_result
+  no_log: true
+  when: homelab_plex_claim_enabled | bool
+
+- name: Restart Plex Media Server after claim attempt
+  ansible.builtin.service:
+    name: "{{ homelab_plex_service_name }}"
+    state: restarted
+  when: homelab_plex_claim_enabled | bool
+
+- name: Report Plex configuration summary
+  ansible.builtin.debug:
+    msg:
+      - "Plex service: {{ homelab_plex_service_name }}"
+      - "Plex local API: http://{{ homelab_plex_host }}:{{ homelab_plex_port }}"
+      - "Plex claim attempted: {{ homelab_plex_claim_enabled }}"

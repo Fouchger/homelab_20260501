@@ -35,6 +35,12 @@ tasks:
           '  task ansible:ping' \
           '    Run ansible all -m ping against state/ansible/inventory.yml.' \
           '' \
+          'Plex' \
+          '  task ansible:plex:configure' \
+          '    Prompt for missing Plex values, save them to state files, then run reusable Ansible roles.' \
+          '  task ansible:plex:prepare-vars' \
+          '    Prompt for missing Plex variables and save non-secrets to .env and secrets to SOPS.' \
+          '' \
           'Audit' \
           '  task ansible:audit' \
           '    Report Ansible command, inventory, SOPS password readiness, and ping capability.'
@@ -111,6 +117,207 @@ tasks:
           echo
           echo "WARNING: ${failed} host(s) failed Ansible ping. Setup will continue; review inventory, SSH key auth, and SOPS readiness."
         fi
+
+  plex:configure:
+    desc: Configure Plex servers using reusable Ansible roles.
+    cmds:
+      - task: plex:prepare-vars
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Configure Plex servers with Ansible roles." "PEACH"
+      - |
+        set -euo pipefail
+        export PATH="${HOME}/.local/bin:${PATH}"
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+        playbook_file="ansible/playbooks/plex-configure.yml"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "ERROR: Missing inventory file: ${inventory_file}" >&2
+          echo "Run: task env_create:inventory:init" >&2
+          exit 1
+        fi
+
+        if [[ ! -f "$playbook_file" ]]; then
+          echo "ERROR: Missing playbook file: ${playbook_file}" >&2
+          exit 1
+        fi
+
+        if ! command -v ansible-playbook >/dev/null 2>&1; then
+          echo "ERROR: ansible-playbook is not available on PATH." >&2
+          echo "Run: task apps:ansible" >&2
+          exit 1
+        fi
+
+        if [[ -f "{{.CONFIG_ENV_FILE}}" ]]; then
+          set -a
+          # shellcheck source=/dev/null
+          source "{{.CONFIG_ENV_FILE}}"
+          set +a
+        fi
+
+        if [[ -f "$password_file" ]] && command -v sops >/dev/null 2>&1; then
+          if [[ -f "$age_key_file" ]] && SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file" >/dev/null 2>&1; then
+            set -a
+            # shellcheck disable=SC1090
+            source <(SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file")
+            set +a
+          elif sops -d "$password_file" >/dev/null 2>&1; then
+            set -a
+            # shellcheck disable=SC1090
+            source <(sops -d "$password_file")
+            set +a
+          fi
+        fi
+
+        export ANSIBLE_CONFIG="${ROOT_DIR}/ansible.cfg"
+        export ANSIBLE_ROLES_PATH="${ROOT_DIR}/ansible/roles:${ANSIBLE_ROLES_PATH:-}"
+
+        if [[ "${HOMELAB_PLEX_SERVICE_NAME:-plexmediaserver}" =~ ^plex0[0-9]+$ ]]; then
+          echo "ERROR: HOMELAB_PLEX_SERVICE_NAME is the Linux service name, not the Plex host/container name." >&2
+          echo "Use the default: plexmediaserver" >&2
+          echo "Edit {{.CONFIG_ENV_FILE}} or rerun task ansible:plex:prepare-vars after removing HOMELAB_PLEX_SERVICE_NAME." >&2
+          exit 1
+        fi
+
+        ansible-playbook -i "$inventory_file" "$playbook_file"
+
+  plex:prepare-vars:
+    desc: Prompt for missing Plex variables and save them to state files.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Prepare Plex configuration variables." "PEACH"
+      - |
+        set -euo pipefail
+
+        config_file="{{.CONFIG_ENV_FILE}}"
+        password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
+        runtime_file="{{.PASSWORDS_RUNTIME_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+        recipients_file="{{.SOPS_AGE_RECIPIENTS_FILE}}"
+
+        mkdir -p "$(dirname "$config_file")" "$(dirname "$password_file")"
+        touch "$config_file"
+        chmod 600 "$config_file"
+
+        upsert_env_file() {
+          local file_path="$1"
+          local key="$2"
+          local value="$3"
+          python3 -S "{{.SCRIPT_LIB_DIR}}/env-file-manager.py" upsert \
+            --file "$file_path" \
+            --key "$key" \
+            --value "$value"
+        }
+
+        read_env_value() {
+          local key="$1"
+          if [[ -f "$config_file" ]]; then
+            grep -E "^${key}=" "$config_file" | tail -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true
+          fi
+        }
+
+        prompt_plain_if_missing() {
+          local key="$1"
+          local prompt="$2"
+          local default_value="$3"
+          local current_value="${!key:-}"
+          if [[ -z "$current_value" ]]; then
+            current_value="$(read_env_value "$key")"
+          fi
+          if [[ -z "$current_value" ]]; then
+            printf '%s [%s]: ' "$prompt" "$default_value" > /dev/tty
+            IFS= read -r current_value < /dev/tty
+            current_value="${current_value:-$default_value}"
+            upsert_env_file "$config_file" "$key" "$current_value"
+            export "$key=$current_value"
+          fi
+        }
+
+        decrypt_passwords() {
+          export SOPS_AGE_KEY_FILE="$age_key_file"
+          if [[ ! -f "$password_file" ]] || ! grep -Eq '^(sops_|sops:)' "$password_file"; then
+            task passwords:encrypt
+          fi
+          if [[ ! -f "$password_file" ]]; then
+            echo "ERROR: Missing encrypted password file: ${password_file}" >&2
+            exit 1
+          fi
+          if [[ -f "$age_key_file" ]]; then
+            SOPS_AGE_KEY_FILE="$age_key_file" sops --decrypt --input-type dotenv --output-type dotenv "$password_file" > "$runtime_file"
+          else
+            sops --decrypt --input-type dotenv --output-type dotenv "$password_file" > "$runtime_file"
+          fi
+          chmod 600 "$runtime_file"
+        }
+
+        encrypt_passwords() {
+          export SOPS_AGE_KEY_FILE="$age_key_file"
+          if [[ ! -f "$recipients_file" ]]; then
+            echo "ERROR: Missing SOPS recipients file. Run: task passwords:keys:generate" >&2
+            exit 1
+          fi
+          sops --encrypt --age "$(cat "$recipients_file")" --input-type dotenv --output-type dotenv "$runtime_file" > "$password_file"
+          chmod 600 "$password_file"
+          rm -f "$runtime_file"
+        }
+
+        read_secret_value() {
+          local key="$1"
+          if [[ -f "$runtime_file" ]]; then
+            grep -E "^${key}=" "$runtime_file" | tail -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true
+          fi
+        }
+
+        prompt_secret_if_missing() {
+          local key="$1"
+          local prompt="$2"
+          local current_value="${!key:-}"
+          if [[ -z "$current_value" ]]; then
+            current_value="$(read_secret_value "$key")"
+          fi
+          if [[ -z "$current_value" ]]; then
+            printf '%s: ' "$prompt" > /dev/tty
+            IFS= read -rs current_value < /dev/tty
+            printf '\n' > /dev/tty
+            if [[ -z "$current_value" ]]; then
+              echo "ERROR: ${key} cannot be blank." >&2
+              exit 1
+            fi
+            upsert_env_file "$runtime_file" "$key" "$current_value"
+            export "$key=$current_value"
+          fi
+        }
+
+        prompt_plain_if_missing HOMELAB_PLEX_TARGET_HOSTS "Ansible target host/group for Plex" "plex"
+        prompt_plain_if_missing OMV_SMB_HOST "OMV SMB host/IP" "192.168.30.20"
+        prompt_plain_if_missing OMV_SMB_USERNAME "OMV SMB username" "omvuser"
+        prompt_plain_if_missing HOMELAB_SHARED_DRIVE_NAMES "Shared drive names, comma separated" "TB4a,TB5a,TB10a,TB10b,TB16a"
+        prompt_plain_if_missing HOMELAB_SHARED_DRIVES_BEHAVIOUR "Existing fstab mount behaviour, s=skip or r=replace" "s"
+        prompt_plain_if_missing HOMELAB_PLEX_HOST "Plex local API host inside the server" "127.0.0.1"
+        prompt_plain_if_missing HOMELAB_PLEX_PORT "Plex local API port" "32400"
+        prompt_plain_if_missing HOMELAB_PLEX_SERVICE_NAME "Plex Linux service name, not host/container name" "plexmediaserver"
+
+        if ! command -v sops >/dev/null 2>&1; then
+          echo "ERROR: sops is required to save Plex secrets. Run: task passwords:setup" >&2
+          exit 1
+        fi
+
+        decrypt_passwords
+        trap 'rm -f "$runtime_file"' EXIT
+        prompt_secret_if_missing OMV_SMB_PASSWORD "OMV SMB password"
+        prompt_secret_if_missing PLEX_CLAIM_TOKEN "Fresh Plex claim token from https://www.plex.tv/claim"
+        encrypt_passwords
+        trap - EXIT
+
+        echo "Plex configuration variables are ready. Non-secrets are in ${config_file}; secrets are in ${password_file}."
 
   audit:
     desc: Report Ansible readiness and connectivity capability.

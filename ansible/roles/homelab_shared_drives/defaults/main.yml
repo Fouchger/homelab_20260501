@@ -1,0 +1,25 @@
+---
+# ==============================================================================
+# File: ansible/roles/homelab_shared_drives/defaults/main.yml
+# Purpose:
+#   Defaults for configuring shared SMB/CIFS drives on homelab Plex servers.
+# ==============================================================================
+
+homelab_shared_drive_script_source: "{{ playbook_dir }}/../../scripts/lib/add_shared_drives.sh"
+homelab_shared_drive_script_target: /usr/local/sbin/homelab-add-shared-drives.sh
+homelab_shared_drives_enabled: true
+homelab_shared_drives_behaviour: s
+homelab_shared_drives_replace_credentials: false
+homelab_omv_ip: 192.168.30.20
+homelab_omv_username: omvuser
+homelab_omv_password: ""
+homelab_shared_drive_names:
+  - TB4a
+  - TB5a
+  - TB10a
+  - TB10b
+  - TB16a
+homelab_shared_drive_mount_root: /mnt
+homelab_shared_drive_mount_owner: root
+homelab_shared_drive_mount_group: root
+homelab_shared_drive_mount_mode: '0755'

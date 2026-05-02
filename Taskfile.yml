@@ -183,7 +183,6 @@ tasks:
         task ssh:key:recycle             -> Back up the current homelab SSH key and create a replacement.
         task ssh:copy-id                 -> Copy the homelab public key to inventory hosts when needed.
         task ssh:audit                   -> Show key and per-server passwordless SSH status.
-        task ansible:ping                -> Run ansible all -m ping using the homelab inventory.
 
         --------------------------------------------------------------
         Terraform Operations
@@ -204,6 +203,8 @@ tasks:
         task env_create:inventory:discover -> Scan a CIDR with nmap and report discovered hosts not yet in inventory.
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
+        task ansible:ping                -> Run ansible all -m ping using the homelab inventory.
+        task ansible:plex:configure      -> Prompt for missing Plex values, then configure Plex servers with reusable Ansible roles.                                
 
 
         --------------------------------------------------------------

@@ -1,0 +1,27 @@
+---
+# ==============================================================================
+# File: ansible/group_vars/plex.yml
+# Purpose:
+#   Default Plex group configuration for the homelab Ansible inventory.
+# Notes:
+#   - Non-secret operator choices are loaded from state/config/.env by Task.
+#   - Secret values are loaded from state/secrets/passwords/passwords.enc.env by Task.
+#   - Override these values in inventory/group vars when needed.
+# ==============================================================================
+
+homelab_plex_target_hosts: "{{ lookup('env', 'HOMELAB_PLEX_TARGET_HOSTS') | default('plex', true) }}"
+
+homelab_shared_drives_enabled: "{{ (lookup('env', 'HOMELAB_SHARED_DRIVES_ENABLED') | default('true', true)) | bool }}"
+homelab_shared_drives_behaviour: "{{ lookup('env', 'HOMELAB_SHARED_DRIVES_BEHAVIOUR') | default('s', true) }}"
+homelab_shared_drives_replace_credentials: "{{ (lookup('env', 'HOMELAB_SHARED_DRIVES_REPLACE_CREDENTIALS') | default('false', true)) | bool }}"
+homelab_omv_ip: "{{ lookup('env', 'OMV_SMB_HOST') | default('192.168.30.20', true) }}"
+homelab_omv_username: "{{ lookup('env', 'OMV_SMB_USERNAME') | default('omvuser', true) }}"
+homelab_omv_password: "{{ lookup('env', 'OMV_SMB_PASSWORD') | default('', true) }}"
+homelab_shared_drive_names: "{{ (lookup('env', 'HOMELAB_SHARED_DRIVE_NAMES') | default('TB4a,TB5a,TB10a,TB10b,TB16a', true)).split(',') | map('trim') | reject('equalto', '') | list }}"
+
+homelab_plex_configure_enabled: "{{ (lookup('env', 'HOMELAB_PLEX_CONFIGURE_ENABLED') | default('true', true)) | bool }}"
+homelab_plex_claim_enabled: "{{ (lookup('env', 'HOMELAB_PLEX_CLAIM_ENABLED') | default('true', true)) | bool }}"
+homelab_plex_claim_token: "{{ lookup('env', 'PLEX_CLAIM_TOKEN') | default('', true) }}"
+homelab_plex_service_name: "{{ lookup('env', 'HOMELAB_PLEX_SERVICE_NAME') | default('plexmediaserver', true) }}"
+homelab_plex_host: "{{ lookup('env', 'HOMELAB_PLEX_HOST') | default('127.0.0.1', true) }}"
+homelab_plex_port: "{{ lookup('env', 'HOMELAB_PLEX_PORT') | default('32400', true) }}"

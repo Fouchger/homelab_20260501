@@ -1,0 +1,84 @@
+---
+# ==============================================================================
+# File: ansible/roles/homelab_shared_drives/tasks/main.yml
+# Purpose:
+#   Configure shared SMB/CIFS drives using the existing homelab helper script.
+# ==============================================================================
+
+- name: Validate shared-drive behaviour value
+  ansible.builtin.assert:
+    that:
+      - homelab_shared_drives_behaviour in ['s', 'r']
+    fail_msg: "homelab_shared_drives_behaviour must be 's' for skip or 'r' for replace."
+
+- name: Validate OMV password is available
+  ansible.builtin.assert:
+    that:
+      - homelab_omv_password | length > 0
+    fail_msg: "Set OMV_SMB_PASSWORD in the SOPS-loaded password file or pass homelab_omv_password securely."
+  no_log: true
+
+- name: Install packages required for shared storage configuration
+  ansible.builtin.apt:
+    name:
+      - cifs-utils
+      - sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Ensure shared drive mount directories exist
+  ansible.builtin.file:
+    path: "{{ homelab_shared_drive_mount_root }}/{{ item }}"
+    state: directory
+    owner: "{{ homelab_shared_drive_mount_owner }}"
+    group: "{{ homelab_shared_drive_mount_group }}"
+    mode: "{{ homelab_shared_drive_mount_mode }}"
+  loop: "{{ homelab_shared_drive_names }}"
+
+- name: Ensure Samba credential directory exists
+  ansible.builtin.file:
+    path: /etc/samba
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Remove existing OMV credential file when replacement is requested
+  ansible.builtin.file:
+    path: /etc/samba/omv-cred
+    state: absent
+  when: homelab_shared_drives_replace_credentials | bool
+
+- name: Write OMV CIFS credential file before running the shared-drive helper
+  ansible.builtin.copy:
+    dest: /etc/samba/omv-cred
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      username={{ homelab_omv_username }}
+      password={{ homelab_omv_password }}
+  no_log: true
+
+- name: Copy homelab shared-drive helper to the server
+  ansible.builtin.copy:
+    src: "{{ homelab_shared_drive_script_source }}"
+    dest: "{{ homelab_shared_drive_script_target }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Run homelab shared-drive helper non-interactively
+  ansible.builtin.command: "bash {{ homelab_shared_drive_script_target }}"
+  args:
+    stdin: |
+      {{ homelab_omv_ip }}
+      {{ homelab_shared_drives_behaviour }}
+      {{ homelab_shared_drive_names | join(', ') }}
+  register: homelab_shared_drive_result
+  changed_when: >-
+    'Added:' in homelab_shared_drive_result.stdout or
+    'Updated:' in homelab_shared_drive_result.stdout or
+    'Created mount point:' in homelab_shared_drive_result.stdout

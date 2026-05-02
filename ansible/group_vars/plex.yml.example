@@ -1,0 +1,28 @@
+---
+# ==============================================================================
+# File: ansible/group_vars/plex.yml.example
+# Purpose:
+#   Example Plex group configuration for operators who prefer static Ansible vars.
+# Notes:
+#   - Do not place secrets in this file.
+#   - The committed plex.yml reads from state/config/.env and SOPS-loaded secrets.
+# ==============================================================================
+
+homelab_plex_target_hosts: plex
+homelab_shared_drives_enabled: true
+homelab_shared_drives_behaviour: s
+homelab_shared_drives_replace_credentials: false
+homelab_omv_ip: 192.168.30.20
+homelab_omv_username: omvuser
+homelab_shared_drive_names:
+  - TB4a
+  - TB5a
+  - TB10a
+  - TB10b
+  - TB16a
+
+homelab_plex_configure_enabled: true
+homelab_plex_claim_enabled: true
+homelab_plex_service_name: plexmediaserver
+homelab_plex_host: 127.0.0.1
+homelab_plex_port: 32400

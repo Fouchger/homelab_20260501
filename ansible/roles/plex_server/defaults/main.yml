@@ -1,0 +1,15 @@
+---
+# ==============================================================================
+# File: ansible/roles/plex_server/defaults/main.yml
+# Purpose:
+#   Defaults for claiming and baseline configuration of Plex Media Server.
+# ==============================================================================
+
+homelab_plex_configure_enabled: true
+homelab_plex_claim_enabled: true
+homelab_plex_claim_token: ""
+homelab_plex_service_name: plexmediaserver
+homelab_plex_host: 127.0.0.1
+homelab_plex_port: 32400
+homelab_plex_claim_url: "http://{{ homelab_plex_host }}:{{ homelab_plex_port }}/myplex/claim?token={{ homelab_plex_claim_token | urlencode }}"
+homelab_plex_api_timeout: 90
