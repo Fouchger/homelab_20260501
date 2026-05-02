@@ -8,6 +8,7 @@
 #   - Do not print secret values through these helpers.
 # ==============================================================================
 
+
 health_heading() {
   local title="$1"
   local underline=""
