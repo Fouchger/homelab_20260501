@@ -23,8 +23,6 @@ vars:
   SCRIPTS_DIR: scripts
   SCRIPT_LIB_DIR: '{{.SCRIPTS_DIR}}/lib'
   SERVICES_DIR: services
-  PROXMOX_HELPER_SCRIPTS_DIR: '{{.SERVICES_DIR}}/proxmox_helper_scripts'
-  PROXMOX_HELPER_STATE_DIR: '{{.STATE_DIR}}/proxmox_helper_scripts'
 
   # Secrets and backup paths
   SECRETS_DIR: '{{.STATE_DIR}}/secrets'
@@ -66,10 +64,6 @@ vars:
   ANSIBLE_REQUIREMENTS_AUDIT_SCRIPT: '{{.SCRIPT_LIB_DIR}}/audit-ansible-requirements.py'
   INVENTORY_MANAGER_SCRIPT: '{{.SCRIPT_LIB_DIR}}/inventory-manager.py'
   NETWORK_DISCOVERY_SCRIPT: '{{.SCRIPT_LIB_DIR}}/network-discovery.py'
-  PROXMOX_HELPER_MANAGER_SCRIPT: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-manager.py'
-  PROXMOX_HELPER_LXC_RUNNER: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-lxc-create.sh'
-  CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
-  PLEX_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/plex.sh'
 
   # Git and GitHub configuration keys
   GITHUB_USERNAME_KEY: GITHUB_USERNAME
@@ -78,7 +72,6 @@ vars:
   GIT_USER_EMAIL_KEY: GIT_USER_EMAIL
 
 includes:
-  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
   passwords: ./taskfile/passwords.Taskfile.yml
   github: ./taskfile/github.Taskfile.yml
   env_create: ./taskfile/env_create.Taskfile.yml
@@ -153,19 +146,6 @@ tasks:
                                             files. Safe to run after any password task.
 
         --------------------------------------------------------------
-        Proxmox helper scripts
-        --------------------------------------------------------------
-        task proxmox_scripts:code-server:install -> Install code-server using either the reviewed static script in this
-                                                    repository or, after explicit confirmation, the latest upstream
-                                                    community script.
-        task proxmox_scripts:community:list -> List supported Proxmox Community Script wrappers.
-        task proxmox_scripts:community:init SCRIPT=plex -> Create state/proxmox_helper_scripts/plex.conf if missing.
-        task proxmox_scripts:community:configure SCRIPT=plex -> Configure reusable Advanced Install variables.
-        task proxmox_scripts:community:plan SCRIPT=plex -> Show the planned LXC creation runs.
-        task proxmox_scripts:community:run SCRIPT=plex EXECUTE=yes -> Create LXCs on Proxmox and update inventory after success.
-        task proxmox_scripts:community:audit -> Show configured helper-script state files.
-
-        --------------------------------------------------------------
         Application and automation tooling
         --------------------------------------------------------------
         task apps:setup                 -> Install Python, pipx, Ansible, Terraform, Packer,
@@ -227,7 +207,6 @@ tasks:
         clear
         bash "{{.BANNER_SCRIPT}}"
         bash "{{.ENSURE_EXECUTABLE_SCRIPTS}}"
-      - task: proxmox_scripts:code-server:install
       - task: passwords:setup
       - task: github:setup
       - task: apps:setup
