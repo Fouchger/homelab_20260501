@@ -274,10 +274,9 @@ This repository includes a Terraform stack for deploying Proxmox LXCs through th
 
 ```bash
 cp terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json.example terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
-cp terraform/proxmox/community-scripts-lxc/examples/secrets.auto.tfvars.example terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars
 ```
 
-Update the local `secrets.auto.tfvars` file with the required password values. It is ignored by Git.
+The Taskfile generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` from SOPS or environment variables. Do not create or commit this file manually.
 
 Run through Taskfile from the repository root:
 

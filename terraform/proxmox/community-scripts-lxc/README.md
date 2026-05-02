@@ -10,13 +10,7 @@ This Terraform stack owns only the deployment wrapper and Terraform state. The L
 
 Do not commit passwords in Terraform files.
 
-Create a local-only file from the example:
-
-```bash
-cp terraform/proxmox/community-scripts-lxc/examples/secrets.auto.tfvars.example terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars
-```
-
-Then update the password value locally. The file is ignored by `.gitignore`.
+The Taskfile generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` from SOPS or environment variables. Do not create or commit this file manually.
 
 ## Container configuration
 

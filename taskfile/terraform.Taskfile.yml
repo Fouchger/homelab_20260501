@@ -127,8 +127,11 @@ tasks:
             return 0
           fi
 
-          umask 077
-          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
+          mkdir -p "$(dirname '{{.TERRAFORM_LXC_SECRET_TFVARS}}')"
+          tmp_secret_file="$(mktemp '{{.TERRAFORM_LXC_DIR}}/.secrets.auto.tfvars.json.XXXXXX')"
+          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > "$tmp_secret_file"
+          chmod 600 "$tmp_secret_file"
+          mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
         }
 
         load_homelab_env
@@ -196,8 +199,11 @@ tasks:
             exit 1
           fi
 
-          umask 077
-          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
+          mkdir -p "$(dirname '{{.TERRAFORM_LXC_SECRET_TFVARS}}')"
+          tmp_secret_file="$(mktemp '{{.TERRAFORM_LXC_DIR}}/.secrets.auto.tfvars.json.XXXXXX')"
+          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > "$tmp_secret_file"
+          chmod 600 "$tmp_secret_file"
+          mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
         }
 
         load_homelab_env
