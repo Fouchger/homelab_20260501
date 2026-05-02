@@ -56,7 +56,10 @@ def prompt_count(handle: TextIO) -> int:
 
 
 def env_var_from_hostname(hostname: str) -> str:
-    return re.sub(r'[^A-Z0-9_]', '_', f'{hostname}_SSH_PASSWORD'.upper())
+    value = re.sub(r'[^A-Z0-9_]', '_', f'{hostname}_SSH_PASSWORD'.upper())
+    if re.match(r'^[0-9]', value):
+        value = f'_{value}'
+    return value
 
 
 def validate_name(label: str, value: str) -> None:
@@ -399,20 +402,14 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
             'SSH password variable name in state/secrets/passwords/passwords.enc.env',
             default_password_var,
         )
-        if first_ssh_password_var and not looks_like_env_var(first_ssh_password_var):
-            first_ssh_password_value = first_ssh_password_var
-            first_ssh_password_var = default_password_var
-            output = tty if tty.writable() else sys.stdout
-            print(
-                f'Input looked like a password, not a variable name. Using variable: {first_ssh_password_var}',
-                file=output,
-            )
-        else:
+        first_ssh_password_value = ''
+        if first_ssh_password_var:
             first_ssh_password_value = read_secret(
                 tty,
-                'SSH password value to save in encrypted password file (blank to only reference existing variable)',
+                f'SSH password value for {first_ssh_password_var} (blank to only reference existing variable)',
             )
         python_interpreter = prompt_optional(tty, 'Python interpreter', 'auto_silent')
+        ssh_port = '22'
         check_network = True
     else:
         group = args.group
@@ -422,9 +419,10 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         first_ansible_host = args.ansible_host or args.hostname
         first_mac_address = args.mac_address or ''
         ssh_user = args.ssh_user
-        first_ssh_password_var = args.ssh_password_var or ''
+        first_ssh_password_var = args.ssh_password_var or env_var_from_hostname(first_hostname)
         first_ssh_password_value = ''
         python_interpreter = args.python_interpreter or 'auto_silent'
+        ssh_port = args.ssh_port or '22'
         check_network = False
 
     validate_name('Group', group)
@@ -452,11 +450,17 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         mac_address = increment_mac(first_mac_address, offset)
         ssh_password_var = increment_env_var(first_ssh_password_var, offset)
 
-        if hostname in all_inventory_hosts:
-            report.append(('SKIPPED', hostname, 'already exists in inventory'))
-            continue
-        if ansible_host in all_inventory_targets:
-            report.append(('SKIPPED', hostname, f'connection target {ansible_host} already exists in inventory'))
+        existing_server = None
+        existing_location = ''
+        if hostname in root_hosts:
+            existing_server = root_hosts[hostname]
+            existing_location = 'root'
+        elif hostname in groups.get(group, {}):
+            existing_server = groups[group][hostname]
+            existing_location = group
+
+        if existing_server is None and ansible_host in all_inventory_targets:
+            report.append(('SKIPPED', hostname, f'connection target {ansible_host} already exists in inventory under another hostname'))
             continue
 
         network_status = 'not checked'
@@ -466,7 +470,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         server = {
             'ansible_host': ansible_host,
             'ansible_user': ssh_user,
-            'ansible_port': '22',
+            'ansible_port': ssh_port,
             'ansible_ssh_private_key_file': os.environ.get('HOMELAB_SSH_KEY_FILE', '~/.ssh/homelab_ed25519'),
             'ansible_python_interpreter': python_interpreter,
         }
@@ -481,11 +485,19 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
             server['ansible_password'] = "{{ lookup('env', '" + ssh_password_var + "') }}"
             server['homelab_ssh_password_var'] = ssh_password_var
 
-        groups[group][hostname] = server
-        all_inventory_hosts.add(hostname)
-        all_inventory_targets.add(ansible_host)
-        added += 1
-        report.append(('ADDED', hostname, f'ansible_host={ansible_host}, group={group}, network={network_status}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
+        if existing_server is not None:
+            if existing_location != group and hostname in root_hosts:
+                del root_hosts[hostname]
+            groups[group][hostname] = server
+            all_inventory_targets.add(ansible_host)
+            added += 1
+            report.append(('UPDATED', hostname, f'ansible_host={ansible_host}, group={group}, network={network_status}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
+        else:
+            groups[group][hostname] = server
+            all_inventory_hosts.add(hostname)
+            all_inventory_targets.add(ansible_host)
+            added += 1
+            report.append(('ADDED', hostname, f'ansible_host={ansible_host}, group={group}, network={network_status}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
 
     if added:
         write_inventory(inventory_file, root_hosts, groups)
@@ -496,7 +508,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         print(f'{status:7} {hostname:30} {detail}')
     print(f'\nInventory file: {inventory_file}')
     print(f'Password file: {password_file} (updated only when it already exists and SOPS is ready)')
-    print(f'Servers requested: {server_count}; added: {added}; skipped: {server_count - added}')
+    print(f'Servers requested: {server_count}; changed: {added}; skipped: {server_count - added}')
 
 
 
@@ -600,6 +612,7 @@ def main() -> int:
     add_parser.add_argument('--mac-address', default='')
     add_parser.add_argument('--ssh-password-var', default='')
     add_parser.add_argument('--python-interpreter', default='auto_silent')
+    add_parser.add_argument('--ssh-port', default='22')
 
     normalise_parser = subparsers.add_parser('normalise-auth')
     normalise_parser.add_argument('--inventory-file', required=True)

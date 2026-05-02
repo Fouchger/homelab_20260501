@@ -71,6 +71,13 @@ vars:
   GIT_USER_NAME_KEY: GIT_USER_NAME
   GIT_USER_EMAIL_KEY: GIT_USER_EMAIL
 
+  # Proxmox configuration keys
+  PROXMOX_SSH_HOST_KEY: PROXMOX_SSH_HOST
+  PROXMOX_SSH_PORT_KEY: PROXMOX_SSH_PORT
+  PROXMOX_SSH_USER_KEY: PROXMOX_SSH_USER
+  PROXMOX_HOST_IP_KEY: PROXMOX_HOST_IP
+  PROXMOX_API_URL_KEY: PROXMOX_API_URL
+
 includes:
   passwords: ./taskfile/passwords.Taskfile.yml
   github: ./taskfile/github.Taskfile.yml
@@ -79,6 +86,7 @@ includes:
   apps: ./taskfile/apps.Taskfile.yml
   health: ./taskfile/health.Taskfile.yml
   ansible: ./taskfile/ansible.Taskfile.yml
+  proxmox: ./taskfile/proxmox.Taskfile.yml
 
 tasks:
   default:
@@ -188,6 +196,19 @@ tasks:
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
 
+
+        --------------------------------------------------------------
+        Proxmox Terraform API bootstrap
+        --------------------------------------------------------------
+        task proxmox:host:configure    -> Prompt once for Proxmox host metadata, then update
+                                            state/config/.env and state/ansible/inventory.yml.
+        task proxmox:api:ensure        -> Create or reconcile the Proxmox Terraform role, user,
+                                            root ACL, and API token. Reuses existing valid local
+                                            and remote token state.
+        task proxmox:api:recycle       -> Force-remove and recreate the Proxmox Terraform API token,
+                                            then update encrypted local state.
+        task proxmox:api:report        -> Show Proxmox API bootstrap status without printing secrets.
+
         --------------------------------------------------------------
         Not listed here
         --------------------------------------------------------------
@@ -211,8 +232,9 @@ tasks:
       - task: github:setup
       - task: apps:setup
       - task: env_create:inventory:init
-      - task: env_create:inventory:add
+      - task: proxmox:host:configure
       - task: ssh:setup
+      - task: proxmox:api:ensure
       - |
         set -euo pipefail
 

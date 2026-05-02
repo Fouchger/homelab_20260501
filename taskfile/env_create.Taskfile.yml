@@ -43,10 +43,8 @@ tasks:
         Inventory
           task env_create:inventory:add
             Interactively add one or more servers to state/ansible/inventory.yml.
-            The SSH password prompt accepts a variable name first, then an
-            optional hidden password value. If a password is typed into the
-            variable-name prompt by mistake, the task keeps the default variable
-            name and treats the input as the password value.
+            The SSH password prompt offers a default variable name based on
+            the hostname, then asks for an optional hidden password value.
 
           task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
             Scan a network with nmap and write an advisory report for hosts not
@@ -60,8 +58,9 @@ tasks:
               INVENTORY_ANSIBLE_HOST=...       # SSH IP address or DNS name. Defaults to INVENTORY_HOSTNAME when omitted.
               INVENTORY_VM_LXC_ID=...
               INVENTORY_MAC_ADDRESS=...
-              INVENTORY_SSH_PASSWORD_VAR=...
+              INVENTORY_SSH_PASSWORD_VAR=...  # Defaults to <HOSTNAME>_SSH_PASSWORD when omitted.
               INVENTORY_PYTHON_INTERPRETER=auto_silent
+              INVENTORY_SSH_PORT=22
         EOHELP
 
   inventory:init:
@@ -178,6 +177,7 @@ tasks:
         ssh_user="{{.INVENTORY_SSH_USER}}"
         ssh_password_var="{{.INVENTORY_SSH_PASSWORD_VAR | default ""}}"
         python_interpreter="{{.INVENTORY_PYTHON_INTERPRETER | default "auto_silent"}}"
+        ssh_port="{{.INVENTORY_SSH_PORT | default "22"}}"
 
         if [[ -z "$group" || -z "$hostname" || -z "$ssh_user" ]]; then
           echo "ERROR: INVENTORY_GROUP, INVENTORY_HOSTNAME, and INVENTORY_SSH_USER are required." >&2
@@ -206,4 +206,5 @@ tasks:
           --vm-lxc-id "$vm_lxc_id" \
           --mac-address "$mac_address" \
           --ssh-password-var "$ssh_password_var" \
-          --python-interpreter "$python_interpreter"
+          --python-interpreter "$python_interpreter" \
+          --ssh-port "$ssh_port"
