@@ -48,11 +48,12 @@ tasks:
             variable-name prompt by mistake, the task keeps the default variable
             name and treats the input as the password value.
 
-          task env_create:inventory:add:server INVENTORY_GROUP=... INVENTORY_HOSTNAME=... INVENTORY_SSH_USER=...
+          task env_create:inventory:add:server INVENTORY_GROUP=... INVENTORY_HOSTNAME=... INVENTORY_ANSIBLE_HOST=... INVENTORY_SSH_USER=...
             Non-interactively add or update a server. Intended for other tasks,
             automation, and Ansible workflows.
 
             Optional values:
+              INVENTORY_ANSIBLE_HOST=...       # SSH IP address or DNS name. Defaults to INVENTORY_HOSTNAME when omitted.
               INVENTORY_VM_LXC_ID=...
               INVENTORY_MAC_ADDRESS=...
               INVENTORY_SSH_PASSWORD_VAR=...
@@ -82,17 +83,16 @@ tasks:
           exit 0
         fi
 
-        cat > "$inventory_file" <<EOF_INVENTORY
-        all:
-          hosts:
-            local:
-              ansible_host: 127.0.0.1
-              ansible_connection: local
-              ansible_user: ${current_user}
-              ansible_port: 22
-              ansible_python_interpreter: auto_silent
-          children: {}
-        EOF_INVENTORY
+        {
+          printf 'all:\n'
+          printf '  hosts:\n'
+          printf '    local:\n'
+          printf '      ansible_host: 127.0.0.1\n'
+          printf '      ansible_connection: local\n'
+          printf '      ansible_user: %s\n' "$current_user"
+          printf '      ansible_port: 22\n'
+          printf '  children: {}\n'
+        } > "$inventory_file"
 
         chmod 600 "$inventory_file"
         echo "Created minimum local inventory: ${inventory_file}"
@@ -133,6 +133,7 @@ tasks:
         password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
         group="{{.INVENTORY_GROUP}}"
         hostname="{{.INVENTORY_HOSTNAME}}"
+        ansible_host="{{.INVENTORY_ANSIBLE_HOST | default ""}}"
         vm_lxc_id="{{.INVENTORY_VM_LXC_ID | default ""}}"
         mac_address="{{.INVENTORY_MAC_ADDRESS | default ""}}"
         ssh_user="{{.INVENTORY_SSH_USER}}"
@@ -161,6 +162,7 @@ tasks:
           --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}" \
           --group "$group" \
           --hostname "$hostname" \
+          --ansible-host "$ansible_host" \
           --ssh-user "$ssh_user" \
           --vm-lxc-id "$vm_lxc_id" \
           --mac-address "$mac_address" \

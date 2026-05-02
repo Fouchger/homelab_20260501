@@ -120,13 +120,13 @@ Removes runtime plaintext password files and temporary decrypted files.
 task ssh:setup
 ```
 
-Installs SSH client tooling, calls `env_create:inventory:init` to create `state/ansible/inventory.yml` if missing, creates the homelab Ed25519 key if missing, copies the public key to remote inventory hosts when needed, and reports per-server status.
+Installs SSH client tooling, calls `env_create:inventory:init` to create `state/ansible/inventory.yml` if missing, creates the homelab Ed25519 key if missing, copies the public key to remote inventory hosts using `ansible_host`, and reports per-server status.
 
 ```bash
 task ssh:audit
 ```
 
-Reports SSH key status and passwordless SSH status for each server in the inventory.
+Reports SSH key status and passwordless SSH status for each server in the inventory. The logical inventory hostname stays separate from the SSH connection target stored in `ansible_host`.
 
 ```bash
 task proxmox_scripts:code-server:install
@@ -177,6 +177,34 @@ task passwords:cleanup
 Generated key material and backup bundles live under `state/secrets/` and `state/backups/`. These are local-only and must not be committed.
 
 After running `task passwords:backup:offline`, move the backup bundle to offline storage.
+
+
+## Inventory model
+
+`state/ansible/inventory.yml` separates the logical Ansible hostname from the SSH connection target:
+
+```yaml
+all:
+  hosts:
+    local:
+      ansible_host: 127.0.0.1
+      ansible_connection: local
+      ansible_user: root
+      ansible_port: 22
+  children:
+    proxmox:
+      hosts:
+        pve01:
+          ansible_host: 192.168.20.10
+          ansible_user: root
+          ansible_port: 22
+          ansible_python_interpreter: auto_silent
+          homelab_mac_address: 9c:6b:00:06:49:a7
+          ansible_password: "{{ lookup('env', 'PVE01_SSH_PASSWORD') }}"
+          homelab_ssh_password_var: PVE01_SSH_PASSWORD
+```
+
+Use `task env_create:inventory:add` for the guided flow. It asks for the logical hostname and the SSH IP address or DNS name separately, then derives follow-on hostnames, IP addresses, MAC addresses, and password variable names for additional servers.
 
 ## Local state and generated files
 

@@ -74,6 +74,13 @@ def validate_mac(value: str) -> None:
         raise SystemExit('ERROR: MAC address must be blank or a valid 12-digit MAC address.')
 
 
+def validate_connection_target(value: str) -> None:
+    if not value:
+        raise SystemExit('ERROR: SSH IP address / DNS name is required.')
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]+', value):
+        raise SystemExit('ERROR: SSH IP address / DNS name may only contain letters, numbers, underscore, dot, dash, and colon.')
+
+
 def looks_like_env_var(value: str) -> bool:
     return bool(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', value or ''))
 
@@ -225,6 +232,19 @@ def increment_mac(value: str, offset: int) -> str:
     return ':'.join(hex_value[index:index + 2] for index in range(0, 12, 2))
 
 
+def increment_connection_target(value: str, offset: int) -> str:
+    if not value:
+        return ''
+    ipv4_match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)\.(\d+)', value)
+    if ipv4_match:
+        octets = [int(part) for part in ipv4_match.groups()]
+        number = (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] + offset
+        if number < 0 or number > 0xFFFFFFFF:
+            return value if offset == 0 else ''
+        return '.'.join(str((number >> shift) & 255) for shift in (24, 16, 8, 0))
+    return increment_host(value, offset)
+
+
 def host_reachable(hostname: str) -> bool:
     lookup = subprocess.run(
         ['getent', 'hosts', hostname],
@@ -355,7 +375,6 @@ def read_inventory(inventory_file: Path) -> tuple[dict[str, dict[str, str]], dic
             'ansible_connection': 'local',
             'ansible_user': os.environ.get('USER', 'root'),
             'ansible_port': '22',
-            'ansible_python_interpreter': 'auto_silent',
         }
     return root_hosts, groups
 
@@ -371,6 +390,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         server_count = prompt_count(tty)
         first_vm_lxc_id = prompt_optional(tty, 'First VM/LXC container ID (blank for physical servers and routers)')
         first_hostname = prompt_required(tty, 'First hostname')
+        first_ansible_host = prompt_required(tty, 'First SSH IP address / DNS name')
         first_mac_address = prompt_optional(tty, 'First MAC address')
         ssh_user = prompt_required(tty, 'SSH username')
         default_password_var = env_var_from_hostname(first_hostname)
@@ -399,6 +419,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         server_count = 1
         first_vm_lxc_id = args.vm_lxc_id or ''
         first_hostname = args.hostname
+        first_ansible_host = args.ansible_host or args.hostname
         first_mac_address = args.mac_address or ''
         ssh_user = args.ssh_user
         first_ssh_password_var = args.ssh_password_var or ''
@@ -408,13 +429,17 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
 
     validate_name('Group', group)
     validate_name('Hostname', first_hostname)
+    validate_connection_target(first_ansible_host)
     validate_env_var(first_ssh_password_var)
     validate_mac(first_mac_address)
 
     root_hosts, groups = read_inventory(inventory_file)
     all_inventory_hosts = set(root_hosts)
+    all_inventory_targets = {values.get('ansible_host', name) for name, values in root_hosts.items()}
     for group_hosts in groups.values():
         all_inventory_hosts.update(group_hosts)
+        for name, values in group_hosts.items():
+            all_inventory_targets.add(values.get('ansible_host', name))
 
     report: list[tuple[str, str, str]] = []
     added = 0
@@ -422,6 +447,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
 
     for offset in range(server_count):
         hostname = increment_host(first_hostname, offset)
+        ansible_host = increment_connection_target(first_ansible_host, offset)
         vm_lxc_id = increment_numeric_string(first_vm_lxc_id, offset)
         mac_address = increment_mac(first_mac_address, offset)
         ssh_password_var = increment_env_var(first_ssh_password_var, offset)
@@ -429,12 +455,16 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
         if hostname in all_inventory_hosts:
             report.append(('SKIPPED', hostname, 'already exists in inventory'))
             continue
-        if check_network and host_reachable(hostname):
-            report.append(('SKIPPED', hostname, 'hostname resolves and responds on the network'))
+        if ansible_host in all_inventory_targets:
+            report.append(('SKIPPED', hostname, f'connection target {ansible_host} already exists in inventory'))
             continue
 
+        network_status = 'not checked'
+        if check_network:
+            network_status = 'reachable' if host_reachable(ansible_host) else 'unreachable'
+
         server = {
-            'ansible_host': hostname,
+            'ansible_host': ansible_host,
             'ansible_user': ssh_user,
             'ansible_port': '22',
             'ansible_python_interpreter': python_interpreter,
@@ -452,8 +482,9 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
 
         groups[group][hostname] = server
         all_inventory_hosts.add(hostname)
+        all_inventory_targets.add(ansible_host)
         added += 1
-        report.append(('ADDED', hostname, f'group={group}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
+        report.append(('ADDED', hostname, f'ansible_host={ansible_host}, group={group}, network={network_status}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}, password_saved={"yes" if password_saved else "no"}'))
 
     if added:
         write_inventory(inventory_file, root_hosts, groups)
@@ -482,6 +513,7 @@ def main() -> int:
     add_parser.add_argument('--recipients-file', required=True)
     add_parser.add_argument('--group', required=True)
     add_parser.add_argument('--hostname', required=True)
+    add_parser.add_argument('--ansible-host', default='')
     add_parser.add_argument('--ssh-user', required=True)
     add_parser.add_argument('--vm-lxc-id', default='')
     add_parser.add_argument('--mac-address', default='')

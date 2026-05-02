@@ -184,8 +184,8 @@ tasks:
         task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
                                             host definition.
         task env_create:inventory:add     -> Interactively add or update a grouped server in the Ansible
-                                            inventory, including VM/LXC ID, MAC address, SSH user, password
-                                            variable reference, and Python interpreter discovery mode.
+                                            inventory, including SSH IP/DNS target, VM/LXC ID, MAC address, SSH
+                                            user, password variable reference, and Python interpreter mode.
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
 

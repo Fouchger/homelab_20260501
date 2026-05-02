@@ -325,7 +325,11 @@ tasks:
           fi
 
           echo "${name}: copying public key to ${target}. You may be prompted for the server password."
-          ssh-copy-id -i "$public_key_file" -p "$port" -o StrictHostKeyChecking=accept-new "$target"
+          if ssh-copy-id -i "$public_key_file" -p "$port" -o StrictHostKeyChecking=accept-new "$target"; then
+            echo "${name}: public key copied successfully to ${target}."
+          else
+            echo "${name}: WARNING: unable to copy public key to ${target}. Check DNS/IP, SSH port, and credentials." >&2
+          fi
         done < <(parse_inventory)
 
   audit:
