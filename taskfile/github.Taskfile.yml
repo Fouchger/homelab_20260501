@@ -206,8 +206,8 @@ tasks:
         }
 
         github_username="$(prompt_if_missing "{{.GITHUB_USERNAME_KEY}}" "GitHub username")"
-        git_user_name="$(prompt_if_missing "{{.GIT_USER_NAME_KEY}}" "Git commit user.name")"
-        git_user_email="$(prompt_if_missing "{{.GIT_USER_EMAIL_KEY}}" "Git commit user.email")"
+        git_user_name="$(prompt_if_missing "{{.GIT_USER_NAME_KEY}}" "Git: Username (Name)")"
+        git_user_email="$(prompt_if_missing "{{.GIT_USER_EMAIL_KEY}}" "Git:  User email (name@email.com)")"
 
         git config --global user.name "$git_user_name"
         git config --global user.email "$git_user_email"

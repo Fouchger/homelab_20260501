@@ -63,3 +63,21 @@ terraform plan \
   -var="proxmox_ssh_private_key_file=~/.ssh/homelab_ed25519"
 terraform apply -parallelism=2
 ```
+
+## Environment loading
+
+The repository Taskfile explicitly sources `state/config/.env` because some Task versions do not support the `--dotenv` CLI flag. You can therefore run the Terraform tasks directly from the repository root without manually exporting `.env` values.
+
+For apply, the task also attempts to decrypt `state/secrets/passwords/passwords.enc.env` with SOPS and age. It expects either:
+
+```bash
+HOMELAB_LXC_ROOT_PASSWORD=<container-root-password>
+```
+
+or the variable referenced by `PROXMOX_SSH_PASSWORD_VAR`. The task writes the password into a local-only generated file:
+
+```text
+terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
+```
+
+This file is ignored by Git and should not be committed.

@@ -20,6 +20,7 @@ state1/
 *.tfplan
 terraform.tfvars
 *.auto.tfvars
+.terraform.lock.hcl
 
 # Ansible
 *.retry
@@ -52,3 +53,7 @@ coverage.*
 __pycache__/
 *.pyc
 
+
+# Generated Terraform secret variables
+terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
+terraform/proxmox/community-scripts-lxc/.terraform.lock.hcl
