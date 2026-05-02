@@ -36,7 +36,7 @@ tasks:
         health_file "Encrypted password file" "{{.PASSWORDS_ENCRYPTED_FILE}}"
         health_file "Ansible inventory" "{{.ANSIBLE_INVENTORY_FILE}}"
         health_file "Ansible requirements" "ansible/requirements.yml"
-        health_file "Network discovery report" "{{.ANSIBLE_DISCOVERY_REPORT}}"
+        health_optional_file "Network discovery report" "{{.ANSIBLE_DISCOVERY_REPORT}}"
 
         health_heading "Secrets readiness"
         health_sops_status "Password file" "{{.PASSWORDS_ENCRYPTED_FILE}}" "{{.SOPS_AGE_KEY_FILE}}" || true
@@ -93,7 +93,7 @@ tasks:
           health_warn "SSH key operations" "run task ssh:setup"
         fi
 
-        if command -v ansible >/dev/null 2>&1 && [[ -f "{{.ANSIBLE_INVENTORY_FILE}}" ]]; then
+        if health_binary_or_pipx "Ansible command" ansible ansible ansible --version >/dev/null 2>&1 && [[ -f "{{.ANSIBLE_INVENTORY_FILE}}" ]]; then
           health_ok "Ansible inventory automation" "ready"
         else
           health_warn "Ansible inventory automation" "run task apps:ansible and task env_create:inventory:init"

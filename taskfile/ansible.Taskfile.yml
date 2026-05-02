@@ -40,7 +40,7 @@ tasks:
           '    Report Ansible command, inventory, SOPS password readiness, and ping capability.'
 
   ping:
-    desc: Run ansible all -m ping using the homelab inventory.
+    desc: Run ansible ping per host using the homelab inventory without failing the full setup.
     cmds:
       - |
         set -euo pipefail
@@ -68,13 +68,11 @@ tasks:
         fi
 
         if [[ -f "$password_file" ]] && command -v sops >/dev/null 2>&1; then
-          if [[ -f "$age_key_file" ]]; then
-            if SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file" >/dev/null 2>&1; then
-              set -a
-              # shellcheck disable=SC1090
-              source <(SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file")
-              set +a
-            fi
+          if [[ -f "$age_key_file" ]] && SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file" >/dev/null 2>&1; then
+            set -a
+            # shellcheck disable=SC1090
+            source <(SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file")
+            set +a
           elif sops -d "$password_file" >/dev/null 2>&1; then
             set -a
             # shellcheck disable=SC1090
@@ -83,7 +81,36 @@ tasks:
           fi
         fi
 
-        ansible all -i "$inventory_file" -m ping
+        mapfile -t hosts < <(ansible all -i "$inventory_file" --list-hosts 2>/dev/null | sed '1d' | awk '{$1=$1; print}' | sed '/^$/d')
+
+        if [[ "${#hosts[@]}" -eq 0 ]]; then
+          echo "WARNING: No Ansible hosts were found in ${inventory_file}."
+          exit 0
+        fi
+
+        echo
+        echo "Ansible ping report"
+        echo "-------------------"
+        printf '%-24s %s\n' "Host" "Status"
+        printf '%-24s %s\n' "----" "------"
+
+        failed=0
+        for host in "${hosts[@]}"; do
+          output_file="$(mktemp)"
+          if ansible "$host" -i "$inventory_file" -m ping >"$output_file" 2>&1; then
+            printf '%-24s [OK]\n' "$host"
+          else
+            failed=$((failed + 1))
+            reason="$(grep -E 'UNREACHABLE|FAILED|Permission denied|Could not resolve|timed out|No route' "$output_file" | head -n 1 | sed 's/^[[:space:]]*//')"
+            printf '%-24s [FAIL] %s\n' "$host" "${reason:-see ansible output}"
+          fi
+          rm -f "$output_file"
+        done
+
+        if [[ "$failed" -gt 0 ]]; then
+          echo
+          echo "WARNING: ${failed} host(s) failed Ansible ping. Setup will continue; review inventory, SSH key auth, and SOPS readiness."
+        fi
 
   audit:
     desc: Report Ansible readiness and connectivity capability.

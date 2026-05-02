@@ -467,6 +467,7 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
             'ansible_host': ansible_host,
             'ansible_user': ssh_user,
             'ansible_port': '22',
+            'ansible_ssh_private_key_file': os.environ.get('HOMELAB_SSH_KEY_FILE', '~/.ssh/homelab_ed25519'),
             'ansible_python_interpreter': python_interpreter,
         }
         if vm_lxc_id:
@@ -498,6 +499,86 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
     print(f'Servers requested: {server_count}; added: {added}; skipped: {server_count - added}')
 
 
+
+def key_auth_works(host_values: dict[str, str], key_file: str) -> tuple[bool, str]:
+    connection = host_values.get('ansible_connection', 'ssh')
+    if connection == 'local':
+        return True, 'local'
+
+    host = host_values.get('ansible_host', '')
+    user = host_values.get('ansible_user', '')
+    port = host_values.get('ansible_port', '22')
+    if not host:
+        return False, 'missing ansible_host'
+
+    target = f'{user}@{host}' if user else host
+    command = [
+        'ssh',
+        '-i', key_file,
+        '-p', port,
+        '-o', 'BatchMode=yes',
+        '-o', 'ConnectTimeout=5',
+        '-o', 'StrictHostKeyChecking=accept-new',
+        target,
+        'true',
+    ]
+    result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if result.returncode == 0:
+        return True, f'key auth works for {target}'
+    return False, f'key auth failed for {target}'
+
+
+def normalise_auth(args: argparse.Namespace) -> None:
+    inventory_file = Path(args.inventory_file)
+    key_file = args.ssh_key_file
+    if not inventory_file.is_file():
+        raise SystemExit(f'ERROR: Missing inventory file: {inventory_file}')
+    if not Path(key_file).is_file():
+        raise SystemExit(f'ERROR: Missing SSH private key: {key_file}')
+
+    root_hosts, groups = read_inventory(inventory_file)
+    changed = False
+    report: list[tuple[str, str, str]] = []
+
+    for host_name, values in root_hosts.items():
+        ok, detail = key_auth_works(values, key_file)
+        if values.get('ansible_connection') == 'local':
+            report.append(('SKIPPED', host_name, 'local connection'))
+            continue
+        if ok:
+            values['ansible_ssh_private_key_file'] = key_file
+            if 'ansible_password' in values:
+                del values['ansible_password']
+            changed = True
+            report.append(('UPDATED', host_name, detail))
+        else:
+            report.append(('SKIPPED', host_name, detail))
+
+    for group_name, group_hosts in groups.items():
+        for host_name, values in group_hosts.items():
+            ok, detail = key_auth_works(values, key_file)
+            if values.get('ansible_connection') == 'local':
+                report.append(('SKIPPED', host_name, 'local connection'))
+                continue
+            if ok:
+                values['ansible_ssh_private_key_file'] = key_file
+                if 'ansible_password' in values:
+                    del values['ansible_password']
+                changed = True
+                report.append(('UPDATED', host_name, f'group={group_name}; {detail}'))
+            else:
+                report.append(('SKIPPED', host_name, f'group={group_name}; {detail}'))
+
+    if changed:
+        write_inventory(inventory_file, root_hosts, groups)
+
+    print('\nSSH auth normalisation report')
+    print('-----------------------------')
+    for status, host_name, detail in report:
+        print(f'{status:7} {host_name:30} {detail}')
+    print(f'\nInventory file: {inventory_file}')
+    print('Steady-state Ansible auth prefers SSH keys. Password variables are retained only as homelab metadata.')
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage homelab Ansible inventory entries.')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -520,12 +601,19 @@ def main() -> int:
     add_parser.add_argument('--ssh-password-var', default='')
     add_parser.add_argument('--python-interpreter', default='auto_silent')
 
+    normalise_parser = subparsers.add_parser('normalise-auth')
+    normalise_parser.add_argument('--inventory-file', required=True)
+    normalise_parser.add_argument('--ssh-key-file', required=True)
+
     args = parser.parse_args()
     if args.command == 'interactive-add':
         add_servers(args, interactive=True)
         return 0
     if args.command == 'add-server':
         add_servers(args, interactive=False)
+        return 0
+    if args.command == 'normalise-auth':
+        normalise_auth(args)
         return 0
     return 1
 

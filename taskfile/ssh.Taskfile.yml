@@ -57,6 +57,10 @@ tasks:
             Copy the homelab public key to hosts in state/ansible/inventory.yml
             when passwordless SSH is not already working.
 
+          task ssh:normalise-auth
+            When key login works, update the inventory to use the homelab SSH
+            key for Ansible steady state and remove runtime ansible_password.
+
         Audit
           task ssh:audit
             Report SSH key and per-server passwordless SSH status.
@@ -69,6 +73,7 @@ tasks:
       - task: :env_create:inventory:init
       - task: key:ensure
       - task: copy-id
+      - task: normalise-auth
       - task: audit
 
   install:
@@ -250,7 +255,7 @@ tasks:
             }
             function emit() {
               if (current != "") {
-                print current "|" host "|" user "|" connection "|" port
+                print current "|" host "|" user "|" connection "|" port "|" keyfile "|" password
               }
             }
             /^[[:space:]]*($|#)/ { next }
@@ -282,6 +287,8 @@ tasks:
                 user = ""
                 connection = "ssh"
                 port = "22"
+                keyfile = ""
+                password = "no"
                 next
               }
 
@@ -292,13 +299,15 @@ tasks:
                 if (key == "ansible_user") user = value
                 if (key == "ansible_connection" && value != "") connection = value
                 if (key == "ansible_port" && value != "") port = value
+                if (key == "ansible_ssh_private_key_file" && value != "") keyfile = value
+                if (key == "ansible_password" && value != "") password = "yes"
               }
             }
             END { emit() }
           ' "$inventory_file"
         }
 
-        while IFS='|' read -r name host user connection port; do
+        while IFS='|' read -r name host user connection port keyfile password; do
           [[ -n "$name" ]] || continue
 
           if [[ "$connection" == "local" ]]; then
@@ -331,6 +340,39 @@ tasks:
             echo "${name}: WARNING: unable to copy public key to ${target}. Check DNS/IP, SSH port, and credentials." >&2
           fi
         done < <(parse_inventory)
+
+
+  normalise-auth:
+    desc: Switch inventory hosts to key-based steady-state Ansible authentication when SSH key login works.
+    cmds:
+      - |
+        # Print Header
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Normalise SSH authentication for Ansible steady state." "PEACH"
+      - |
+        set -euo pipefail
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "ERROR: Missing inventory file: ${inventory_file}" >&2
+          echo "Run: task env_create:inventory:init" >&2
+          exit 1
+        fi
+
+        if [[ ! -f "$key_file" ]]; then
+          echo "ERROR: Missing SSH key file: ${key_file}" >&2
+          echo "Run: task ssh:key:ensure" >&2
+          exit 1
+        fi
+
+        python3 -S "{{.INVENTORY_MANAGER_SCRIPT}}" normalise-auth \
+          --inventory-file "$inventory_file" \
+          --ssh-key-file "$key_file"
+
 
   audit:
     desc: Report SSH key and per-server passwordless SSH status.
@@ -387,7 +429,7 @@ tasks:
             }
             function emit() {
               if (current != "") {
-                print current "|" host "|" user "|" connection "|" port
+                print current "|" host "|" user "|" connection "|" port "|" keyfile "|" password
               }
             }
             /^[[:space:]]*($|#)/ { next }
@@ -419,6 +461,8 @@ tasks:
                 user = ""
                 connection = "ssh"
                 port = "22"
+                keyfile = ""
+                password = "no"
                 next
               }
 
@@ -429,6 +473,8 @@ tasks:
                 if (key == "ansible_user") user = value
                 if (key == "ansible_connection" && value != "") connection = value
                 if (key == "ansible_port" && value != "") port = value
+                if (key == "ansible_ssh_private_key_file" && value != "") keyfile = value
+                if (key == "ansible_password" && value != "") password = "yes"
               }
             }
             END { emit() }
@@ -437,14 +483,21 @@ tasks:
 
         echo
         echo "Per-server status"
-        printf '%-24s %-28s %-14s %s\n' "Server" "Target" "Connection" "Status"
-        printf '%-24s %-28s %-14s %s\n' "------" "------" "----------" "------"
+        printf '%-24s %-28s %-14s %-14s %s\n' "Server" "Target" "Connection" "Auth mode" "Status"
+        printf '%-24s %-28s %-14s %-14s %s\n' "------" "------" "----------" "---------" "------"
 
-        while IFS='|' read -r name host user connection port; do
+        while IFS='|' read -r name host user connection port keyfile password; do
           [[ -n "$name" ]] || continue
 
+          auth_mode="password"
+          if [[ -n "$keyfile" ]]; then
+            auth_mode="key"
+          elif [[ "$password" == "yes" ]]; then
+            auth_mode="password"
+          fi
+
           if [[ "$connection" == "local" ]]; then
-            printf '%-24s %-28s %-14s ' "$name" "$host" "$connection"
+            printf '%-24s %-28s %-14s %-14s ' "$name" "$host" "$connection" "local"
             status_ok
             printf ' (local)\n'
             continue
@@ -456,18 +509,18 @@ tasks:
           fi
 
           if [[ ! -f "$key_file" ]]; then
-            printf '%-24s %-28s %-14s ' "$name" "$target" "$connection"
+            printf '%-24s %-28s %-14s %-14s ' "$name" "$target" "$connection" "$auth_mode"
             status_skipped
             printf ' (missing key)\n'
             continue
           fi
 
           if ssh -i "$key_file" -p "$port" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" true >/dev/null 2>&1; then
-            printf '%-24s %-28s %-14s ' "$name" "$target" "$connection"
+            printf '%-24s %-28s %-14s %-14s ' "$name" "$target" "$connection" "key"
             status_ok
             printf '\n'
           else
-            printf '%-24s %-28s %-14s ' "$name" "$target" "$connection"
+            printf '%-24s %-28s %-14s %-14s ' "$name" "$target" "$connection" "$auth_mode"
             status_failed
             printf ' (run task ssh:copy-id)\n'
           fi

@@ -42,6 +42,7 @@ health_missing() { health_status "MISSING" "$1" "${2:-}"; }
 health_warn() { health_status "WARN" "$1" "${2:-}"; }
 health_fail() { health_status "FAIL" "$1" "${2:-}"; }
 health_skip() { health_status "SKIPPED" "$1" "${2:-}"; }
+health_optional() { health_status "OPTIONAL" "$1" "${2:-}"; }
 health_ready() { health_status "SOPS READY" "$1" "${2:-}"; }
 health_locked() { health_status "SOPS LOCKED" "$1" "${2:-}"; }
 
@@ -97,6 +98,17 @@ health_file() {
     health_ok "$label" "$file_path"
   else
     health_missing "$label" "$file_path"
+  fi
+}
+
+health_optional_file() {
+  local label="$1"
+  local file_path="$2"
+
+  if [[ -f "$file_path" ]]; then
+    health_ok "$label" "$file_path"
+  else
+    health_optional "$label" "$file_path"
   fi
 }
 

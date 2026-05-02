@@ -120,13 +120,19 @@ Removes runtime plaintext password files and temporary decrypted files.
 task ssh:setup
 ```
 
-Installs SSH client tooling, calls `env_create:inventory:init` to create `state/ansible/inventory.yml` if missing, creates the homelab Ed25519 key if missing, copies the public key to remote inventory hosts using `ansible_host`, and reports per-server status.
+Installs SSH client tooling, calls `env_create:inventory:init` to create `state/ansible/inventory.yml` if missing, creates the homelab Ed25519 key if missing, copies the public key to remote inventory hosts using `ansible_host`, normalises successful hosts to key-based Ansible authentication, and reports per-server status.
+
+```bash
+task ssh:normalise-auth
+```
+
+After `ssh-copy-id` succeeds, updates inventory hosts to use the homelab private key for steady-state Ansible access and removes runtime `ansible_password` from those hosts. The secret variable reference is retained as metadata for bootstrap and recovery.
 
 ```bash
 task ssh:audit
 ```
 
-Reports SSH key status and passwordless SSH status for each server in the inventory. The logical inventory hostname stays separate from the SSH connection target stored in `ansible_host`.
+Reports SSH key status, auth mode, and passwordless SSH status for each server in the inventory. The logical inventory hostname stays separate from the SSH connection target stored in `ansible_host`.
 
 ```bash
 task proxmox_scripts:code-server:install
@@ -198,9 +204,9 @@ all:
           ansible_host: 192.168.20.10
           ansible_user: root
           ansible_port: 22
+          ansible_ssh_private_key_file: /root/.ssh/homelab_ed25519
           ansible_python_interpreter: auto_silent
           homelab_mac_address: 9c:6b:00:06:49:a7
-          ansible_password: "{{ lookup('env', 'PVE01_SSH_PASSWORD') }}"
           homelab_ssh_password_var: PVE01_SSH_PASSWORD
 ```
 
@@ -261,7 +267,7 @@ After inventory and SSH setup, validate actual Ansible connectivity with:
 task ansible:ping
 ```
 
-This uses `state/ansible/inventory.yml`. If the encrypted password file can be decrypted, password variables are loaded into the task process only and are not printed. SSH key-based access remains the preferred steady-state path.
+This uses `state/ansible/inventory.yml`, reports per-host success or failure, and does not fail the wider setup flow when one host is unreachable. Password variables may still be loaded for bootstrap or recovery, but SSH key-based access is the preferred steady-state path.
 
 ## Network discovery
 
