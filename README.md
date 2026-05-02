@@ -279,3 +279,32 @@ task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
 
 The task writes an advisory report to `state/ansible/discovery-report.txt`. It does not modify the inventory automatically; add selected hosts with `task env_create:inventory:add`.
 
+
+## Proxmox Community Scripts design
+
+The repo wraps selected Proxmox Community Scripts instead of forking them. The wrapper mirrors the upstream Advanced Install variable model, stores confirmed values in `state/proxmox_helper_scripts/<script>.conf`, and then passes `var_*` values to the upstream script in default/unattended mode. This keeps the Community Scripts logic upstream while giving this repo repeatable, reviewable configuration.
+
+Supported wrappers currently include Plex, Technitium DNS, Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Whisparr, and Bazarr.
+
+Recommended workflow:
+
+```bash
+task proxmox_scripts:community:list
+task proxmox_scripts:community:init SCRIPT=plex
+task proxmox_scripts:community:configure SCRIPT=plex
+task proxmox_scripts:community:plan SCRIPT=plex
+task proxmox_scripts:community:run SCRIPT=plex EXECUTE=yes
+```
+
+The run task is dry-run by default. It creates LXCs only when `EXECUTE=yes` is supplied. After each successful upstream create, the wrapper updates `state/ansible/inventory.yml` through `scripts/lib/inventory-manager.py`. That preserves the repo ownership rule: `env_create`/the inventory manager owns inventory creation and structure; Proxmox tasks only request updates.
+
+Key design choices:
+
+- `hostname_prefix`, `start_hostname_index`, and `count` derive multiple LXC hostnames such as `plex01`, `plex02`.
+- `start_vmid` derives VMIDs when supplied; blank lets upstream choose.
+- static IPv4 uses `start_ip_cidr` and derives the next address for additional LXCs.
+- `var_ssh=yes` enables SSH in the container.
+- `var_ssh_authorized_key` injects the control-plane public key from `~/.ssh/homelab_ed25519.pub` when enabled.
+- created LXCs are added to the configured inventory group only after the upstream creation command succeeds.
+- `state/config/.env` is never created by these tasks.
+- `state/secrets/passwords/passwords.enc.env` is never created or recreated by these tasks.
