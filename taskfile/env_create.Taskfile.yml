@@ -48,6 +48,10 @@ tasks:
             variable-name prompt by mistake, the task keeps the default variable
             name and treats the input as the password value.
 
+          task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
+            Scan a network with nmap and write an advisory report for hosts not
+            yet represented by ansible_host in the inventory.
+
           task env_create:inventory:add:server INVENTORY_GROUP=... INVENTORY_HOSTNAME=... INVENTORY_ANSIBLE_HOST=... INVENTORY_SSH_USER=...
             Non-interactively add or update a server. Intended for other tasks,
             automation, and Ansible workflows.
@@ -121,6 +125,41 @@ tasks:
           --inventory-file "$inventory_file" \
           --password-file "$password_file" \
           --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}"
+
+  inventory:discover:
+    desc: Scan a network and report hosts not yet represented in the Ansible inventory.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Discover network hosts for inventory planning." "PEACH"
+      - |
+        set -euo pipefail
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        report_file="{{.ANSIBLE_DISCOVERY_REPORT}}"
+        cidr="{{.DISCOVERY_CIDR | default ""}}"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "Inventory file does not exist. Creating the baseline inventory first."
+          task env_create:inventory:init
+        fi
+
+        if [[ -z "$cidr" ]]; then
+          printf 'Network CIDR to scan, for example 192.168.20.0/24: ' > /dev/tty
+          IFS= read -r cidr < /dev/tty
+        fi
+
+        if [[ -z "$cidr" ]]; then
+          echo "ERROR: DISCOVERY_CIDR is required." >&2
+          exit 1
+        fi
+
+        python3 -S "{{.NETWORK_DISCOVERY_SCRIPT}}" \
+          --cidr "$cidr" \
+          --inventory-file "$inventory_file" \
+          --report-file "$report_file"
 
   inventory:add:server:
     desc: Add or update a server in the Ansible inventory using task variables.

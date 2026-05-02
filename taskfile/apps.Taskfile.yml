@@ -74,7 +74,6 @@ tasks:
         source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
         print_section_header "Install homelab applications and automation tooling." "PEACH"
       - task: prerequisites
-      - task: python
       - task: ansible
       - task: terraform
       - task: packer
@@ -275,12 +274,18 @@ tasks:
         health_command "Python" python3 python3 --version
         health_command "pip" pip3 pip3 --version
         health_command "pipx" python3 python3 -m pipx --version
-        health_command "Ansible" ansible ansible --version
-        health_command "Ansible Galaxy" ansible-galaxy ansible-galaxy --version
+        health_binary_or_pipx "Ansible" ansible ansible ansible --version
+        health_binary_or_pipx "Ansible Galaxy" ansible-galaxy ansible ansible-galaxy --version
         health_command "Terraform" terraform terraform version
         health_command "Packer" packer packer version
         health_command "nmap" nmap nmap --version
         health_file "Ansible requirements" "$requirements_file"
+
+        health_heading "Package sources"
+        health_apt_package "nmap" nmap
+        health_apt_package "Terraform" terraform
+        health_apt_package "Packer" packer
+        health_pipx_package "Ansible pipx package" ansible
 
         if [[ ! -f "$requirements_file" ]]; then
           exit 0
@@ -302,7 +307,7 @@ tasks:
 
         health_heading "Ansible roles"
         while IFS= read -r role; do
-          if ansible-galaxy role list | grep -Fq "$role"; then
+          if ansible-galaxy role list 2>/dev/null | grep -Fq "$role"; then
             health_ok "$role"
           else
             health_missing "$role"

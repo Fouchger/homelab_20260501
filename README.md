@@ -239,3 +239,37 @@ Recommended conventions:
 ## Licence
 
 This repository is licensed under GPL-3.0. See `LICENSE`.
+
+## Operational health and capabilities
+
+The repo now separates installed tools from operational capability. Run:
+
+```bash
+task health:check
+task health:capabilities
+task health:setup-state
+task health:all
+```
+
+The health framework checks binaries, apt packages, pipx-installed tools, required files, SOPS readiness, and first-run/repeat-run state markers. SOPS readiness is reported explicitly as `SOPS READY` or `SOPS LOCKED` without printing secret values.
+
+## Ansible connectivity
+
+After inventory and SSH setup, validate actual Ansible connectivity with:
+
+```bash
+task ansible:ping
+```
+
+This uses `state/ansible/inventory.yml`. If the encrypted password file can be decrypted, password variables are loaded into the task process only and are not printed. SSH key-based access remains the preferred steady-state path.
+
+## Network discovery
+
+Use nmap-based discovery to find devices that are not yet represented in the inventory:
+
+```bash
+task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
+```
+
+The task writes an advisory report to `state/ansible/discovery-report.txt`. It does not modify the inventory automatically; add selected hosts with `task env_create:inventory:add`.
+

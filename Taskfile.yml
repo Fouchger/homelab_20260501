@@ -44,6 +44,11 @@ vars:
   # Ansible inventory paths
   ANSIBLE_DIR: '{{.STATE_DIR}}/ansible'
   ANSIBLE_INVENTORY_FILE: '{{.ANSIBLE_DIR}}/inventory.yml'
+  ANSIBLE_DISCOVERY_REPORT: '{{.ANSIBLE_DIR}}/discovery-report.txt'
+
+  # State marker paths
+  STATE_MARKERS_DIR: '{{.STATE_DIR}}/markers'
+  HOMELAB_SETUP_MARKER: '{{.STATE_MARKERS_DIR}}/homelab-setup.done'
 
   # SSH configuration
   SSH_KEY_FILE: '${HOME}/.ssh/homelab_ed25519'
@@ -59,6 +64,7 @@ vars:
   HEALTH_CHECK_SCRIPT: '{{.SCRIPT_LIB_DIR}}/health-check.sh'
   ANSIBLE_REQUIREMENTS_AUDIT_SCRIPT: '{{.SCRIPT_LIB_DIR}}/audit-ansible-requirements.py'
   INVENTORY_MANAGER_SCRIPT: '{{.SCRIPT_LIB_DIR}}/inventory-manager.py'
+  NETWORK_DISCOVERY_SCRIPT: '{{.SCRIPT_LIB_DIR}}/network-discovery.py'
   PROXMOX_HELPER_LXC_RUNNER: '{{.SCRIPT_LIB_DIR}}/proxmox-helper-lxc-create.sh'
   CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
   PLEX_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/plex.sh'
@@ -77,6 +83,7 @@ includes:
   ssh: ./taskfile/ssh.Taskfile.yml
   apps: ./taskfile/apps.Taskfile.yml
   health: ./taskfile/health.Taskfile.yml
+  ansible: ./taskfile/ansible.Taskfile.yml
 
 tasks:
   default:
@@ -157,6 +164,8 @@ tasks:
                                             and recommended Ansible content for this homelab.
         task apps:audit                 -> Show installed application and automation tooling status.
         task health:check                -> Run a consolidated operational health check across core areas.
+        task health:capabilities         -> Show what the control plane can currently do.
+        task health:setup-state          -> Show first-run/repeat-run state markers.
 
         --------------------------------------------------------------
         Git and Github Operations
@@ -177,6 +186,7 @@ tasks:
         task ssh:key:recycle             -> Back up the current homelab SSH key and create a replacement.
         task ssh:copy-id                 -> Copy the homelab public key to inventory hosts when needed.
         task ssh:audit                   -> Show key and per-server passwordless SSH status.
+        task ansible:ping                -> Run ansible all -m ping using the homelab inventory.
 
         --------------------------------------------------------------
         Ansible Operations
@@ -186,6 +196,7 @@ tasks:
         task env_create:inventory:add     -> Interactively add or update a grouped server in the Ansible
                                             inventory, including SSH IP/DNS target, VM/LXC ID, MAC address, SSH
                                             user, password variable reference, and Python interpreter mode.
+        task env_create:inventory:discover -> Scan a CIDR with nmap and report discovered hosts not yet in inventory.
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
 
@@ -215,7 +226,21 @@ tasks:
       - task: env_create:inventory:init
       - task: env_create:inventory:add
       - task: ssh:setup
+      - |
+        set -euo pipefail
+
+        if ! task ansible:ping; then
+          echo "WARNING: Ansible ping failed. Setup will continue; review inventory, SSH, and SOPS readiness." >&2
+        fi
+      - |
+        set -euo pipefail
+
+        mkdir -p "{{.STATE_MARKERS_DIR}}"
+        printf 'completed_at=%s\n' "$(date -Iseconds)" > "{{.HOMELAB_SETUP_MARKER}}"
+        chmod 600 "{{.HOMELAB_SETUP_MARKER}}"
       - task: health:check
+      - task: health:capabilities
+      - task: health:setup-state
       - |
         set -euo pipefail
 

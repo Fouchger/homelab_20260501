@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+# ==============================================================================
+# File: taskfile/ansible.Taskfile.yml
+# Purpose:
+#   Run Ansible operational checks against the homelab inventory.
+# Notes:
+#   - This Taskfile must not create or recreate state/config/.env.
+#   - This Taskfile must not create or recreate passwords.enc.env.
+#   - Password values are loaded into the process environment only when SOPS is ready.
+# ==============================================================================
+
+version: '3'
+
+tasks:
+  default:
+    desc: Show available Ansible tasks
+    cmds:
+      - task: tasklist
+
+  tasklist:
+    desc: Show available Ansible tasks
+    cmds:
+      - task --taskfile "{{.TASKFILE}}" --list
+
+  help:
+    desc: Show safe Ansible tasks
+    cmds:
+      - |
+        set -euo pipefail
+        printf '%s\n' \
+          'Safe Ansible task help' \
+          '' \
+          'Connectivity' \
+          '  task ansible:ping' \
+          '    Run ansible all -m ping against state/ansible/inventory.yml.' \
+          '' \
+          'Audit' \
+          '  task ansible:audit' \
+          '    Report Ansible command, inventory, SOPS password readiness, and ping capability.'
+
+  ping:
+    desc: Run ansible all -m ping using the homelab inventory.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Run Ansible ping against the homelab inventory." "PEACH"
+      - |
+        set -euo pipefail
+        export PATH="${HOME}/.local/bin:${PATH}"
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "ERROR: Missing inventory file: ${inventory_file}" >&2
+          echo "Run: task env_create:inventory:init" >&2
+          exit 1
+        fi
+
+        if ! command -v ansible >/dev/null 2>&1; then
+          echo "ERROR: ansible is not available on PATH." >&2
+          echo "Run: task apps:ansible" >&2
+          exit 1
+        fi
+
+        if [[ -f "$password_file" ]] && command -v sops >/dev/null 2>&1; then
+          if [[ -f "$age_key_file" ]]; then
+            if SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file" >/dev/null 2>&1; then
+              set -a
+              # shellcheck disable=SC1090
+              source <(SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file")
+              set +a
+            fi
+          elif sops -d "$password_file" >/dev/null 2>&1; then
+            set -a
+            # shellcheck disable=SC1090
+            source <(sops -d "$password_file")
+            set +a
+          fi
+        fi
+
+        ansible all -i "$inventory_file" -m ping
+
+  audit:
+    desc: Report Ansible readiness and connectivity capability.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Audit Ansible readiness and capability." "PEACH"
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.HEALTH_CHECK_SCRIPT}}"
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+
+        health_heading "Ansible health"
+        health_binary_or_pipx "Ansible" ansible ansible ansible --version
+        health_binary_or_pipx "Ansible Galaxy" ansible-galaxy ansible ansible-galaxy --version
+        health_file "Inventory" "$inventory_file"
+        health_sops_status "Password environment" "$password_file" "$age_key_file" || true
+
+        health_heading "Ansible capabilities"
+        if command -v ansible >/dev/null 2>&1 && [[ -f "$inventory_file" ]]; then
+          health_ok "Inventory ping" "ready; run task ansible:ping"
+        else
+          health_missing "Inventory ping" "requires ansible and ${inventory_file}"
+        fi
