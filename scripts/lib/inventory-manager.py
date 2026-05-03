@@ -11,6 +11,7 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -57,6 +58,13 @@ def prompt_count(handle: TextIO) -> int:
 
 def env_var_from_hostname(hostname: str) -> str:
     value = re.sub(r'[^A-Z0-9_]', '_', f'{hostname}_SSH_PASSWORD'.upper())
+    if re.match(r'^[0-9]', value):
+        value = f'_{value}'
+    return value
+
+
+def lxc_root_password_var_from_hostname(hostname: str) -> str:
+    value = re.sub(r'[^A-Z0-9_]', '_', f'{hostname}_LXC_ROOT_PASSWORD'.upper())
     if re.match(r'^[0-9]', value):
         value = f'_{value}'
     return value
@@ -512,6 +520,134 @@ def add_servers(args: argparse.Namespace, interactive: bool) -> None:
 
 
 
+
+
+def strip_cidr(value: str) -> str:
+    return (value or '').split('/', 1)[0].strip()
+
+
+def prompt_yes_no(handle: TextIO, label: str, default: str = 'Y') -> bool:
+    default = default.upper()
+    while True:
+        value = prompt_optional(handle, label, default).strip().lower()
+        if value in ('y', 'yes'):
+            return True
+        if value in ('n', 'no'):
+            return False
+        output = handle if handle.writable() else sys.stdout
+        print('Please enter y or n.', file=output)
+
+
+def load_terraform_lxc_containers(tfvars_file: Path) -> dict[str, dict[str, object]]:
+    if not tfvars_file.is_file():
+        raise SystemExit(f'ERROR: Missing Terraform LXC tfvars file: {tfvars_file}')
+    try:
+        data = json.loads(tfvars_file.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f'ERROR: Invalid JSON in {tfvars_file}: {exc}') from exc
+    containers = data.get('containers')
+    if not isinstance(containers, dict) or not containers:
+        raise SystemExit(f'ERROR: No containers object found in {tfvars_file}.')
+    valid_containers: dict[str, dict[str, object]] = {}
+    for name, values in containers.items():
+        if isinstance(values, dict):
+            valid_containers[str(name)] = values
+    if not valid_containers:
+        raise SystemExit(f'ERROR: No valid container definitions found in {tfvars_file}.')
+    return valid_containers
+
+
+def add_terraform_lxc_inventory(args: argparse.Namespace) -> None:
+    tfvars_file = Path(args.terraform_lxc_vars)
+    inventory_file = Path(args.inventory_file)
+    password_file = Path(args.password_file)
+    recipients_file = Path(args.recipients_file)
+    containers = load_terraform_lxc_containers(tfvars_file)
+    tty = terminal()
+
+    root_hosts, groups = read_inventory(inventory_file)
+    changed = 0
+    skipped = 0
+    report: list[tuple[str, str, str]] = []
+
+    output = tty if tty.writable() else sys.stdout
+    print('', file=output)
+    print('Terraform LXC inventory sync', file=output)
+    print('----------------------------', file=output)
+    print(f'Source: {tfvars_file}', file=output)
+    print(f'Inventory: {inventory_file}', file=output)
+
+    for terraform_name in sorted(containers):
+        values = containers[terraform_name]
+        default_group = str(values.get('app') or 'lxc')
+        default_hostname = terraform_name
+        default_ansible_host = strip_cidr(str(values.get('ip_cidr') or ''))
+        default_vm_lxc_id = str(values.get('ctid') or '')
+        default_mac_address = str(values.get('mac_address') or '')
+        default_password_var = lxc_root_password_var_from_hostname(default_hostname)
+
+        print('', file=output)
+        print(f'LXC: {terraform_name}', file=output)
+        group = prompt_optional(tty, 'Group', default_group)
+        hostname = prompt_optional(tty, 'Hostname', default_hostname)
+        ansible_host = prompt_optional(tty, 'SSH IP address / DNS name', default_ansible_host)
+        vm_lxc_id = prompt_optional(tty, 'VM/LXC container ID', default_vm_lxc_id)
+        mac_address = prompt_optional(tty, 'MAC address', default_mac_address)
+        ssh_user = prompt_optional(tty, 'SSH username', 'root')
+        ssh_password_var = prompt_optional(
+            tty,
+            'SSH password variable name in state/secrets/passwords/passwords.enc.env',
+            default_password_var,
+        )
+        python_interpreter = prompt_optional(tty, 'Python interpreter', 'auto_silent')
+        ssh_port = prompt_optional(tty, 'SSH port', '22')
+
+        if not prompt_yes_no(tty, 'Save this server to inventory?', 'Y'):
+            skipped += 1
+            report.append(('SKIPPED', hostname or terraform_name, 'operator skipped'))
+            continue
+
+        validate_name('Group', group)
+        validate_name('Hostname', hostname)
+        validate_connection_target(ansible_host)
+        validate_env_var(ssh_password_var)
+        validate_mac(mac_address)
+
+        server = {
+            'ansible_host': ansible_host,
+            'ansible_user': ssh_user,
+            'ansible_port': ssh_port,
+            'ansible_ssh_private_key_file': os.environ.get('HOMELAB_SSH_KEY_FILE', '~/.ssh/homelab_ed25519'),
+            'ansible_python_interpreter': python_interpreter,
+        }
+        if vm_lxc_id:
+            server['homelab_vm_lxc_id'] = vm_lxc_id
+        if mac_address:
+            server['homelab_mac_address'] = mac_address
+        if ssh_password_var:
+            server['ansible_password'] = "{{ lookup('env', '" + ssh_password_var + "') }}"
+            server['homelab_ssh_password_var'] = ssh_password_var
+
+        for group_name in list(groups):
+            if group_name != group and hostname in groups[group_name]:
+                del groups[group_name][hostname]
+        if hostname in root_hosts:
+            del root_hosts[hostname]
+        groups.setdefault(group, {})[hostname] = server
+        changed += 1
+        report.append(('SAVED', hostname, f'ansible_host={ansible_host}, group={group}, vm_lxc_id={vm_lxc_id or "-"}, mac={mac_address or "-"}, password_var={ssh_password_var or "-"}'))
+
+    if changed:
+        write_inventory(inventory_file, root_hosts, groups)
+
+    print('\nTerraform LXC inventory sync report')
+    print('-----------------------------------')
+    for status, hostname, detail in report:
+        print(f'{status:7} {hostname:30} {detail}')
+    print(f'\nInventory file: {inventory_file}')
+    print(f'Containers found: {len(containers)}; saved: {changed}; skipped: {skipped}')
+
+
 def key_auth_works(host_values: dict[str, str], key_file: str) -> tuple[bool, str]:
     connection = host_values.get('ansible_connection', 'ssh')
     if connection == 'local':
@@ -614,6 +750,12 @@ def main() -> int:
     add_parser.add_argument('--python-interpreter', default='auto_silent')
     add_parser.add_argument('--ssh-port', default='22')
 
+    terraform_lxc_parser = subparsers.add_parser('add-terraform-lxc')
+    terraform_lxc_parser.add_argument('--inventory-file', required=True)
+    terraform_lxc_parser.add_argument('--password-file', required=True)
+    terraform_lxc_parser.add_argument('--recipients-file', required=True)
+    terraform_lxc_parser.add_argument('--terraform-lxc-vars', required=True)
+
     normalise_parser = subparsers.add_parser('normalise-auth')
     normalise_parser.add_argument('--inventory-file', required=True)
     normalise_parser.add_argument('--ssh-key-file', required=True)
@@ -624,6 +766,9 @@ def main() -> int:
         return 0
     if args.command == 'add-server':
         add_servers(args, interactive=False)
+        return 0
+    if args.command == 'add-terraform-lxc':
+        add_terraform_lxc_inventory(args)
         return 0
     if args.command == 'normalise-auth':
         normalise_auth(args)

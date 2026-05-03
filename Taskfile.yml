@@ -192,7 +192,8 @@ tasks:
         --------------------------------------------------------------
         task terraform:lxc:init           -> Initialise the Proxmox Community Scripts LXC Terraform stack.
         task terraform:lxc:plan           -> Plan LXC deployments using Proxmox SSH settings from state/config/.env.
-        task terraform:lxc:apply          -> Apply LXC deployments using limited parallelism.
+        task terraform:lxc:apply          -> Apply LXC deployments using limited parallelism, then prompt to add
+                                            Terraform-created LXCs to the Ansible inventory.
         task terraform:lxc:destroy        -> Destroy Terraform-created LXCs while preserving skipped existing containers.
 
         --------------------------------------------------------------
@@ -203,6 +204,8 @@ tasks:
         task env_create:inventory:add     -> Interactively add or update a grouped server in the Ansible
                                             inventory, including SSH IP/DNS target, VM/LXC ID, MAC address, SSH
                                             user, password variable reference, and Python interpreter mode.
+        task env_create:inventory:add:terraform-lxc -> Loop through Terraform LXC definitions, prefill inventory
+                                            fields, and prompt before writing each server to inventory.
         task env_create:inventory:discover -> Scan a CIDR with nmap and report discovered hosts not yet in inventory.
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
@@ -252,6 +255,8 @@ tasks:
       - task: terraform:lxc:init
       - task: terraform:lxc:plan
       - task: terraform:lxc:apply
+      - task: env_create:inventory:add:terraform-lxc
+      - task: plex:configure
       - |
         set -euo pipefail
 

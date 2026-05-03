@@ -108,7 +108,8 @@ tasks:
           python3-apt \
           software-properties-common \
           unzip \
-          wget
+          wget \
+          arp-scan
 
   python:
     desc: Install Python 3, pip, venv, setuptools, wheel, and pipx.

@@ -46,6 +46,10 @@ tasks:
             The SSH password prompt offers a default variable name based on
             the hostname, then asks for an optional hidden password value.
 
+          task env_create:inventory:add:terraform-lxc
+            Loop through Terraform LXC definitions, prefill inventory fields,
+            and prompt before writing each server to state/ansible/inventory.yml.
+
           task env_create:inventory:discover DISCOVERY_CIDR=192.168.20.0/24
             Scan a network with nmap and write an advisory report for hosts not
             yet represented by ansible_host in the inventory.
@@ -124,6 +128,42 @@ tasks:
           --inventory-file "$inventory_file" \
           --password-file "$password_file" \
           --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}"
+
+
+  inventory:add:terraform-lxc:
+    desc: Add Terraform-created LXC servers to the Ansible inventory with prefilled prompts.
+    cmds:
+      - |
+        # Print Header
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Add Terraform-created LXC servers to the Ansible inventory." "PEACH"
+      - |
+        set -euo pipefail
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        inventory_dir="{{.ANSIBLE_DIR}}"
+        password_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
+        terraform_lxc_vars='{{.TERRAFORM_LXC_VARS_FILE | default "terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json"}}'
+
+        if [[ ! -f "$terraform_lxc_vars" ]]; then
+          echo "ERROR: Terraform LXC variables file is missing: ${terraform_lxc_vars}" >&2
+          exit 1
+        fi
+
+        mkdir -p "$inventory_dir"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "Inventory file does not exist. Creating the baseline inventory first."
+          task env_create:inventory:init
+        fi
+
+        python3 -S "{{.INVENTORY_MANAGER_SCRIPT}}" add-terraform-lxc \
+          --inventory-file "$inventory_file" \
+          --password-file "$password_file" \
+          --recipients-file "{{.SOPS_AGE_RECIPIENTS_FILE}}" \
+          --terraform-lxc-vars "$terraform_lxc_vars"
 
   inventory:discover:
     desc: Scan a network and report hosts not yet represented in the Ansible inventory.

@@ -21,6 +21,7 @@ vars:
   TERRAFORM_PARALLELISM: '{{.TERRAFORM_PARALLELISM | default "2"}}'
   TERRAFORM_LXC_TARGET: '{{.TERRAFORM_LXC_TARGET | default ""}}'
   TERRAFORM_LXC_SECRET_TFVARS: terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
+  TERRAFORM_LXC_VARS_FILE: terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
 
 tasks:
   default:
@@ -50,7 +51,8 @@ tasks:
             Plan LXC deployment using Proxmox SSH settings from state/config/.env.
 
           task terraform:lxc:apply
-            Apply LXC deployment using limited parallelism.
+            Apply LXC deployment using limited parallelism, then prompt to add
+            Terraform-created LXC servers to the Ansible inventory.
 
           task terraform:lxc:destroy
             Destroy Terraform-created LXCs. Existing skipped LXCs are preserved.
@@ -226,6 +228,9 @@ tasks:
           -var="proxmox_ssh_user=${proxmox_user}" \
           -var="proxmox_ssh_port=${proxmox_port}" \
           -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+      - |
+        set -euo pipefail
+        task env_create:inventory:add:terraform-lxc
 
   lxc:destroy:
     desc: Destroy Terraform-created Proxmox Community Scripts LXCs.
