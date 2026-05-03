@@ -256,7 +256,9 @@ tasks:
       - task: terraform:lxc:plan
       - task: terraform:lxc:apply
       - task: env_create:inventory:add:terraform-lxc
-      - task: plex:configure
+      - task: ssh:copy-id
+      - task: ssh:normalise-auth
+      - task: ansible:plex:configure
       - |
         set -euo pipefail
 
