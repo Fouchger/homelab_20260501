@@ -136,6 +136,27 @@ tasks:
           mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
         }
 
+        resolve_controlplane_ssh_public_key() {
+          local ssh_private_key_file="$1"
+          local ssh_public_key_file="${HOMELAB_SSH_PUBLIC_KEY_FILE:-${ssh_private_key_file}.pub}"
+          local ssh_public_key=""
+
+          if [[ -f "$ssh_public_key_file" ]]; then
+            ssh_public_key="$(head -n 1 "$ssh_public_key_file")"
+          elif [[ -f "$ssh_private_key_file" ]] && command -v ssh-keygen >/dev/null 2>&1; then
+            ssh_public_key="$(ssh-keygen -y -f "$ssh_private_key_file")"
+          fi
+
+          if [[ -z "$ssh_public_key" ]]; then
+            echo "ERROR: Control-plane SSH public key could not be resolved." >&2
+            echo "       Checked: ${ssh_public_key_file}" >&2
+            echo "       Set HOMELAB_SSH_PUBLIC_KEY_FILE or ensure ${ssh_private_key_file}.pub exists." >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$ssh_public_key"
+        }
+
         load_homelab_env
         prepare_lxc_secret_tfvars
 
@@ -143,6 +164,7 @@ tasks:
         proxmox_user="${PROXMOX_SSH_USER:-root}"
         proxmox_port="${PROXMOX_SSH_PORT:-22}"
         ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+        controlplane_ssh_public_key="$(resolve_controlplane_ssh_public_key "$ssh_key_file")"
 
         if [[ -z "$proxmox_host" ]]; then
           echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
@@ -154,7 +176,8 @@ tasks:
           -var="proxmox_host=${proxmox_host}" \
           -var="proxmox_ssh_user=${proxmox_user}" \
           -var="proxmox_ssh_port=${proxmox_port}" \
-          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}" \
+          -var="controlplane_ssh_public_key=${controlplane_ssh_public_key}"
 
   lxc:apply:
     desc: Apply Proxmox Community Scripts LXC deployment.
@@ -208,6 +231,27 @@ tasks:
           mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
         }
 
+        resolve_controlplane_ssh_public_key() {
+          local ssh_private_key_file="$1"
+          local ssh_public_key_file="${HOMELAB_SSH_PUBLIC_KEY_FILE:-${ssh_private_key_file}.pub}"
+          local ssh_public_key=""
+
+          if [[ -f "$ssh_public_key_file" ]]; then
+            ssh_public_key="$(head -n 1 "$ssh_public_key_file")"
+          elif [[ -f "$ssh_private_key_file" ]] && command -v ssh-keygen >/dev/null 2>&1; then
+            ssh_public_key="$(ssh-keygen -y -f "$ssh_private_key_file")"
+          fi
+
+          if [[ -z "$ssh_public_key" ]]; then
+            echo "ERROR: Control-plane SSH public key could not be resolved." >&2
+            echo "       Checked: ${ssh_public_key_file}" >&2
+            echo "       Set HOMELAB_SSH_PUBLIC_KEY_FILE or ensure ${ssh_private_key_file}.pub exists." >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$ssh_public_key"
+        }
+
         load_homelab_env
         prepare_lxc_secret_tfvars
 
@@ -215,6 +259,7 @@ tasks:
         proxmox_user="${PROXMOX_SSH_USER:-root}"
         proxmox_port="${PROXMOX_SSH_PORT:-22}"
         ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+        controlplane_ssh_public_key="$(resolve_controlplane_ssh_public_key "$ssh_key_file")"
 
         if [[ -z "$proxmox_host" ]]; then
           echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
@@ -227,7 +272,8 @@ tasks:
           -var="proxmox_host=${proxmox_host}" \
           -var="proxmox_ssh_user=${proxmox_user}" \
           -var="proxmox_ssh_port=${proxmox_port}" \
-          -var="proxmox_ssh_private_key_file=${ssh_key_file}"
+          -var="proxmox_ssh_private_key_file=${ssh_key_file}" \
+          -var="controlplane_ssh_public_key=${controlplane_ssh_public_key}"
       - |
         set -euo pipefail
         task env_create:inventory:add:terraform-lxc

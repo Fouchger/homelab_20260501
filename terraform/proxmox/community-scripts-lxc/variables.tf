@@ -30,6 +30,13 @@ variable "proxmox_ssh_private_key_file" {
   default     = "~/.ssh/homelab_ed25519"
 }
 
+variable "controlplane_ssh_public_key" {
+  description = "SSH public key from the control plane to install into created LXCs for root SSH access."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "script_base" {
   description = "Base URL for Proxmox Community Scripts container scripts."
   type        = string
@@ -61,10 +68,9 @@ variable "containers" {
     ip_cidr     = string
     gateway     = string
     vlan        = number
-    mac_address = string
-    ssh_key     = string
+    mac_address  = string
     password_key = string
-    tags        = string
+    tags         = string
 
     gpu          = string
     unprivileged = number

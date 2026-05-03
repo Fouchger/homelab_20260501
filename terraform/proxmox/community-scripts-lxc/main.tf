@@ -85,7 +85,7 @@ resource "null_resource" "community_script_lxc" {
         var_mac=${jsonencode(each.value.mac_address)} \
         var_ns=${jsonencode(coalesce(each.value.nameserver, each.value.gateway))} \
         var_ssh=${jsonencode(local.ssh_enabled)} \
-        var_ssh_authorized_key=${jsonencode(each.value.ssh_key)} \
+        var_ssh_authorized_key=${jsonencode(var.controlplane_ssh_public_key)} \
         var_pw="$container_password" \
         var_ipv6_method=${jsonencode(local.ipv6_method)} \
         var_nesting=${each.value.nesting} \

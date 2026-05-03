@@ -8,7 +8,7 @@ This Terraform stack owns only the deployment wrapper and Terraform state. The L
 
 ## Secrets model
 
-Do not commit passwords in Terraform files.
+Do not commit passwords in Terraform files. Do not hard-code SSH public keys in container definitions.
 
 The Taskfile generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` from SOPS or environment variables. Do not create or commit this file manually.
 
@@ -20,7 +20,7 @@ Copy the example container file before first use:
 cp terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json.example terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
 ```
 
-The copied `.auto.tfvars.json` file is local-only and ignored by `.gitignore`.
+The copied `.auto.tfvars.json` file is local-only and ignored by `.gitignore`. It should contain container-specific settings only. The control-plane SSH public key is supplied by the Taskfile at plan/apply time from `HOMELAB_SSH_PUBLIC_KEY_FILE`, or from `${HOMELAB_SSH_KEY_FILE}.pub` by default.
 
 ## Recommended Taskfile usage
 
@@ -54,8 +54,10 @@ terraform init
 terraform plan \
   -var="proxmox_host=192.168.20.10" \
   -var="proxmox_ssh_user=root" \
-  -var="proxmox_ssh_private_key_file=~/.ssh/homelab_ed25519"
-terraform apply -parallelism=2
+  -var="proxmox_ssh_private_key_file=~/.ssh/homelab_ed25519" \
+  -var="controlplane_ssh_public_key=$(cat ~/.ssh/homelab_ed25519.pub)"
+terraform apply -parallelism=2 \
+  -var="controlplane_ssh_public_key=$(cat ~/.ssh/homelab_ed25519.pub)"
 ```
 
 ## Environment loading
@@ -75,3 +77,13 @@ terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
 ```
 
 This file is ignored by Git and should not be committed.
+
+## Control-plane SSH public key
+
+The Terraform tasks install the control-plane SSH public key into newly created LXCs by passing `controlplane_ssh_public_key` at runtime. Resolution order:
+
+1. `HOMELAB_SSH_PUBLIC_KEY_FILE`
+2. `${HOMELAB_SSH_KEY_FILE}.pub`
+3. `ssh-keygen -y -f ${HOMELAB_SSH_KEY_FILE}` when the `.pub` file is missing
+
+This keeps `containers.auto.tfvars.json` free from duplicated or stale SSH public keys.
