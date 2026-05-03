@@ -23,6 +23,7 @@ vars:
   SCRIPTS_DIR: scripts
   SCRIPT_LIB_DIR: '{{.SCRIPTS_DIR}}/lib'
   SERVICES_DIR: services
+  PROXMOX_HELPER_SCRIPTS_DIR: '{{.SERVICES_DIR}}/proxmox_helper_scripts'
 
   # Secrets and backup paths
   SECRETS_DIR: '{{.STATE_DIR}}/secrets'
@@ -64,6 +65,7 @@ vars:
   ANSIBLE_REQUIREMENTS_AUDIT_SCRIPT: '{{.SCRIPT_LIB_DIR}}/audit-ansible-requirements.py'
   INVENTORY_MANAGER_SCRIPT: '{{.SCRIPT_LIB_DIR}}/inventory-manager.py'
   NETWORK_DISCOVERY_SCRIPT: '{{.SCRIPT_LIB_DIR}}/network-discovery.py'
+  CODE_SERVER_STATIC_SCRIPT: '{{.PROXMOX_HELPER_SCRIPTS_DIR}}/coder-code-server.sh'
 
   # Git and GitHub configuration keys
   GITHUB_USERNAME_KEY: GITHUB_USERNAME
@@ -88,6 +90,7 @@ includes:
   ansible: ./taskfile/ansible.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
   terraform: ./taskfile/terraform.Taskfile.yml
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile copy.yml
 
 tasks:
   default:
@@ -238,6 +241,7 @@ tasks:
         clear
         bash "{{.BANNER_SCRIPT}}"
         bash "{{.ENSURE_EXECUTABLE_SCRIPTS}}"
+      - task: proxmox_scripts:code-server:install
       - task: passwords:setup
       - task: github:setup
       - task: apps:setup

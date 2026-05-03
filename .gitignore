@@ -57,3 +57,6 @@ __pycache__/
 # Generated Terraform secret variables
 terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
 terraform/proxmox/community-scripts-lxc/.terraform.lock.hcl
+
+# Ansible Galaxy downloaded roles
+ansible/roles/marvinpinto.docker-plex/
