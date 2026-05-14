@@ -67,6 +67,14 @@ resource "null_resource" "community_script_lxc" {
 
       echo "[INFO] Deploying ${each.key} using Community Script ${each.value.app}."
 
+      script_url=${jsonencode("${var.script_base}/${each.value.app}.sh")}
+      script_file="$(mktemp /tmp/homelab-${each.value.app}.XXXXXX.sh)"
+      cleanup() { rm -f "$script_file"; }
+      trap cleanup EXIT
+
+      curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 "$script_url" -o "$script_file"
+      chmod 700 "$script_file"
+
       env \
         TERM=${jsonencode(local.term)} \
         mode=${jsonencode(local.install_mode)} \
@@ -98,7 +106,7 @@ resource "null_resource" "community_script_lxc" {
         var_keyctl=${each.value.keyctl} \
         var_mount_fs=${jsonencode(each.value.mount_fs)} \
         var_timezone=${jsonencode(each.value.timezone)} \
-        bash -c "$(curl -fsSL ${var.script_base}/${each.value.app}.sh)" _ default
+        bash "$script_file" default
 
       printf '%s\n' "hostname=${each.key}" "ctid=${each.value.ctid}" "app=${each.value.app}" > "$marker_file"
       chmod 600 "$marker_file"

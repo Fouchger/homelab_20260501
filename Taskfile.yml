@@ -90,7 +90,7 @@ includes:
   ansible: ./taskfile/ansible.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
   terraform: ./taskfile/terraform.Taskfile.yml
-  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile copy.yml
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
 
 tasks:
   default:

@@ -38,9 +38,9 @@ variable "controlplane_ssh_public_key" {
 }
 
 variable "script_base" {
-  description = "Base URL for Proxmox Community Scripts container scripts."
+  description = "Pinned base URL for Proxmox Community Scripts container scripts. Review and update this deliberately when adopting upstream changes."
   type        = string
-  default     = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct"
+  default     = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/2026-05-12/ct"
 }
 
 variable "destroy_lxc_on_terraform_destroy" {

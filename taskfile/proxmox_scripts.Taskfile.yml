@@ -7,9 +7,7 @@
 #   Provide explicit operator entry points for helper scripts used by this repo.
 #
 # Notes:
-#   - The code-server installer is intentionally interactive.
-#   - The operator must choose between the latest upstream community script and
-#     the reviewed static copy stored in this repository.
+#   - The code-server installer uses the reviewed static copy stored in this repository.
 #   - The selected script runs locally on the server where this repo is checked
 #     out. This task does not assume that the local server is a Proxmox host.
 # =============================================================================
@@ -17,8 +15,7 @@
 version: '3'
 
 vars:
-  # Task-specific source policy. Shared script paths are defined in the root Taskfile.
-  CODE_SERVER_UPSTREAM_URL: https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh
+  # Shared script paths are defined in the root Taskfile.
 
 tasks:
   default:
@@ -32,7 +29,7 @@ tasks:
       - task --taskfile "{{.TASKFILE}}" --list
 
   code-server:install:
-    desc: Install code-server using either the latest upstream script or the reviewed static repo script.
+    desc: Install code-server using the reviewed static repo script.
     cmds:
       - |
         # Print Header
@@ -43,7 +40,6 @@ tasks:
       - |
         set -euo pipefail
 
-        upstream_url="{{.CODE_SERVER_UPSTREAM_URL}}"
         static_script="{{.ROOT_DIR}}/{{.CODE_SERVER_STATIC_SCRIPT}}"
 
         require_command() {
@@ -54,7 +50,6 @@ tasks:
         }
 
         require_command bash
-        require_command curl
         require_command hostname
 
         if command -v code-server >/dev/null 2>&1; then
@@ -71,64 +66,16 @@ tasks:
         echo
         echo "Code-server installer"
         echo "====================="
-        echo "This task runs locally on the server where the repo is checked out."
-        echo
-        echo "Available install sources:"
-        echo "  1) latest  - Download and run the latest upstream community script"
-        echo "  2) static  - Run the reviewed static script from this repository"
-        echo
-
-        while true; do
-          printf "Select install source [static]: "
-          read -r install_source
-
-          install_source="${install_source:-static}"
-
-          case "$install_source" in
-            1|latest)
-              selected_source="latest"
-              break
-              ;;
-            2|static)
-              selected_source="static"
-              break
-              ;;
-            *)
-              echo "ERROR: Enter 1, 2, latest, or static."
-              ;;
-          esac
-        done
-
+        echo "This task runs the reviewed static script from this repository."
         echo
         echo "Code-server install summary"
         echo "==========================="
         echo "Host:              $(hostname -f 2>/dev/null || hostname)"
         echo "Repository path:   $ROOT_DIR"
-        echo "Selected source:   $selected_source"
-
-        if [[ "$selected_source" == "latest" ]]; then
-          echo "Upstream URL:      $upstream_url"
-          echo "Version policy:    Latest at execution time, not pinned"
-          echo
-          echo "WARNING: This will execute code downloaded from the upstream URL above."
-          printf "Continue with latest upstream script? [y/N]: "
-          read -r confirm_latest
-
-          case "$confirm_latest" in
-            y|Y|yes|YES)
-              bash -c "$(curl -fsSL "$upstream_url")"
-              ;;
-            *)
-              echo "INFO: Cancelled."
-              exit 0
-              ;;
-          esac
-        else
-          echo "Static script:     $static_script"
-          echo "Version policy:    Reviewed repo copy"
-          echo
-          bash "$static_script"
-        fi
+        echo "Static script:     $static_script"
+        echo "Version policy:    Reviewed repo copy"
+        echo
+        bash "$static_script"
 
   community:list:
     desc: List reusable Proxmox Community Script wrappers supported by this repo.

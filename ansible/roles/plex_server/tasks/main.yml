@@ -3,6 +3,9 @@
 # File: ansible/roles/plex_server/tasks/main.yml
 # Purpose:
 #   Claim Plex Media Server and ensure the service is running.
+# Notes:
+#   - Claim failures are treated as failures; an expired token must not look
+#     successful in operator output.
 # ==============================================================================
 
 - name: Install packages required for Plex configuration
@@ -43,23 +46,28 @@
       - 200
       - 201
       - 204
-      - 400
-      - 401
       - 409
     return_content: true
   register: homelab_plex_claim_result
+  failed_when: >-
+    homelab_plex_claim_result.status not in [200, 201, 204, 409]
+  changed_when: homelab_plex_claim_result.status in [200, 201, 204]
   no_log: true
   when: homelab_plex_claim_enabled | bool
 
-- name: Restart Plex Media Server after claim attempt
+- name: Restart Plex Media Server after successful claim attempt
   ansible.builtin.service:
     name: "{{ homelab_plex_service_name }}"
     state: restarted
-  when: homelab_plex_claim_enabled | bool
+  when:
+    - homelab_plex_claim_enabled | bool
+    - homelab_plex_claim_result is defined
+    - homelab_plex_claim_result.status in [200, 201, 204]
 
 - name: Report Plex configuration summary
   ansible.builtin.debug:
     msg:
       - "Plex service: {{ homelab_plex_service_name }}"
       - "Plex local API: http://{{ homelab_plex_host }}:{{ homelab_plex_port }}"
-      - "Plex claim attempted: {{ homelab_plex_claim_enabled }}"
+      - "Plex claim enabled: {{ homelab_plex_claim_enabled }}"
+      - "Plex claim status: {{ homelab_plex_claim_result.status | default('not attempted') }}"

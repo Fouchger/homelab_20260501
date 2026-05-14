@@ -2,7 +2,10 @@
 # ==============================================================================
 # File: ansible/roles/homelab_shared_drives/tasks/main.yml
 # Purpose:
-#   Configure shared SMB/CIFS drives using the existing homelab helper script.
+#   Configure shared SMB/CIFS drives using native, idempotent Ansible tasks.
+# Notes:
+#   - Avoids wrapping an interactive shell script.
+#   - Credentials are written once to a root-owned 0600 file.
 # ==============================================================================
 
 - name: Validate shared-drive behaviour value
@@ -22,7 +25,6 @@
   ansible.builtin.apt:
     name:
       - cifs-utils
-      - sudo
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -51,7 +53,7 @@
     state: absent
   when: homelab_shared_drives_replace_credentials | bool
 
-- name: Write OMV CIFS credential file before running the shared-drive helper
+- name: Write OMV CIFS credential file
   ansible.builtin.copy:
     dest: /etc/samba/omv-cred
     owner: root
@@ -62,23 +64,29 @@
       password={{ homelab_omv_password }}
   no_log: true
 
-- name: Copy homelab shared-drive helper to the server
-  ansible.builtin.copy:
-    src: "{{ homelab_shared_drive_script_source }}"
-    dest: "{{ homelab_shared_drive_script_target }}"
-    owner: root
-    group: root
-    mode: '0755'
+- name: Check whether CIFS mount entries already exist
+  ansible.builtin.command: >-
+    awk -v mount_path={{ homelab_shared_drive_mount_root }}/{{ item }}
+    '$0 !~ /^[[:space:]]*#/ && NF >= 2 && $2 == mount_path { found=1 } END { exit(found ? 0 : 1) }'
+    /etc/fstab
+  register: homelab_shared_drive_fstab_checks
+  changed_when: false
+  failed_when: false
+  loop: "{{ homelab_shared_drive_names }}"
 
-- name: Run homelab shared-drive helper non-interactively
-  ansible.builtin.command: "bash {{ homelab_shared_drive_script_target }}"
-  args:
-    stdin: |
-      {{ homelab_omv_ip }}
-      {{ homelab_shared_drives_behaviour }}
-      {{ homelab_shared_drive_names | join(', ') }}
-  register: homelab_shared_drive_result
-  changed_when: >-
-    'Added:' in homelab_shared_drive_result.stdout or
-    'Updated:' in homelab_shared_drive_result.stdout or
-    'Created mount point:' in homelab_shared_drive_result.stdout
+- name: Configure CIFS mounts in fstab
+  ansible.posix.mount:
+    path: "{{ homelab_shared_drive_mount_root }}/{{ item.item }}"
+    src: "//{{ homelab_omv_ip }}/{{ item.item }}"
+    fstype: cifs
+    opts: "{{ homelab_shared_drive_mount_options }}"
+    state: present
+  loop: "{{ homelab_shared_drive_fstab_checks.results }}"
+  when: >-
+    homelab_shared_drives_behaviour == 'r' or
+    item.rc != 0
+
+- name: Mount configured CIFS shares
+  ansible.builtin.command: mount -a -t cifs
+  register: homelab_shared_drive_mount_result
+  changed_when: false

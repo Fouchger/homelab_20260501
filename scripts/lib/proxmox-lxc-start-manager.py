@@ -139,12 +139,20 @@ def wait_until_ssh_reachable(container: Container, timeout_seconds: int) -> bool
     return False
 
 
-def start_container(ssh_base: list[str], container: Container, timeout_seconds: int) -> tuple[str, str]:
+def start_container(
+    ssh_base: list[str],
+    container: Container,
+    timeout_seconds: int,
+    wait_for_ssh: bool,
+    ssh_wait_seconds: int,
+) -> tuple[str, str]:
     exists, status_output = pct_status(ssh_base, container.ctid)
     if not exists:
         return "MISSING", f"{container.name} ({container.ctid}) was not found on Proxmox."
 
     if is_running(status_output):
+        if wait_for_ssh and not wait_until_ssh_reachable(container, ssh_wait_seconds):
+            return "FAILED", f"{container.name} ({container.ctid}) is running, but SSH did not become reachable on {container.ssh_host}:{container.ssh_port} within {ssh_wait_seconds} seconds."
         return "RUNNING", f"{container.name} ({container.ctid}) is already running."
 
     start_result = run_remote(ssh_base, f"pct start {container.ctid}")
@@ -153,6 +161,8 @@ def start_container(ssh_base: list[str], container: Container, timeout_seconds: 
         return "FAILED", f"{container.name} ({container.ctid}) failed to start. {details}".strip()
 
     if wait_until_running(ssh_base, container, timeout_seconds):
+        if wait_for_ssh and not wait_until_ssh_reachable(container, ssh_wait_seconds):
+            return "FAILED", f"{container.name} ({container.ctid}) started, but SSH did not become reachable on {container.ssh_host}:{container.ssh_port} within {ssh_wait_seconds} seconds."
         return "STARTED", f"{container.name} ({container.ctid}) started successfully."
 
     return "FAILED", f"{container.name} ({container.ctid}) did not reach running state within {timeout_seconds} seconds."
@@ -182,7 +192,7 @@ def main() -> int:
     failed = 0
     changed = 0
     for container in containers:
-        status, message = start_container(ssh_base, container, args.wait_seconds)
+        status, message = start_container(ssh_base, container, args.wait_seconds, args.wait_ssh, args.ssh_wait_seconds)
         if status in {"STARTED"}:
             changed += 1
         if status in {"FAILED", "MISSING"}:

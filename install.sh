@@ -408,7 +408,7 @@ main() {
   ensure_executables
   install_task
 
-  log_success "Install complete. Next command: cd ${TARGET_DIR} && task bootstrap"
+  log_success "Install complete. Next command: cd ${TARGET_DIR} && task homelab:setup"
 }
 
 main "$@"
