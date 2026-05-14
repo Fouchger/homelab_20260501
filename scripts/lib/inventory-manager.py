@@ -584,7 +584,7 @@ def add_terraform_lxc_inventory(args: argparse.Namespace) -> None:
         default_ansible_host = strip_cidr(str(values.get('ip_cidr') or ''))
         default_vm_lxc_id = str(values.get('ctid') or '')
         default_mac_address = str(values.get('mac_address') or '')
-        default_password_var = lxc_root_password_var_from_hostname(default_hostname)
+        default_password_var = str(values.get('password_key') or lxc_root_password_var_from_hostname(default_hostname))
 
         print('', file=output)
         print(f'LXC: {terraform_name}', file=output)
@@ -647,6 +647,42 @@ def add_terraform_lxc_inventory(args: argparse.Namespace) -> None:
     print(f'\nInventory file: {inventory_file}')
     print(f'Containers found: {len(containers)}; saved: {changed}; skipped: {skipped}')
 
+
+
+def iter_inventory_hosts(root_hosts: dict[str, dict[str, str]], groups: dict[str, dict[str, dict[str, str]]]):
+    seen: set[tuple[str, str]] = set()
+    for host_name, values in root_hosts.items():
+        key = (host_name, values.get('ansible_host', host_name))
+        if key not in seen:
+            seen.add(key)
+            yield host_name, '', values
+    for group_name, group_hosts in groups.items():
+        for host_name, values in group_hosts.items():
+            key = (host_name, values.get('ansible_host', host_name))
+            if key in seen:
+                continue
+            seen.add(key)
+            yield host_name, group_name, values
+
+
+def list_ssh_hosts(args: argparse.Namespace) -> None:
+    inventory_file = Path(args.inventory_file)
+    if not inventory_file.is_file():
+        raise SystemExit(f'ERROR: Missing inventory file: {inventory_file}')
+
+    root_hosts, groups = read_inventory(inventory_file)
+    for host_name, group_name, values in iter_inventory_hosts(root_hosts, groups):
+        host = values.get('ansible_host', host_name)
+        user = values.get('ansible_user', '')
+        connection = values.get('ansible_connection', 'ssh')
+        port = values.get('ansible_port', '22')
+        keyfile = values.get('ansible_ssh_private_key_file', '')
+        password_var = values.get('homelab_ssh_password_var', '')
+        if not password_var:
+            match = re.search(r"lookup\('env', '([^']+)'\)", values.get('ansible_password', ''))
+            if match:
+                password_var = match.group(1)
+        print('|'.join([host_name, group_name, host, user, connection, port, keyfile, password_var]))
 
 def key_auth_works(host_values: dict[str, str], key_file: str) -> tuple[bool, str]:
     connection = host_values.get('ansible_connection', 'ssh')
@@ -760,6 +796,9 @@ def main() -> int:
     normalise_parser.add_argument('--inventory-file', required=True)
     normalise_parser.add_argument('--ssh-key-file', required=True)
 
+    list_ssh_hosts_parser = subparsers.add_parser('list-ssh-hosts')
+    list_ssh_hosts_parser.add_argument('--inventory-file', required=True)
+
     args = parser.parse_args()
     if args.command == 'interactive-add':
         add_servers(args, interactive=True)
@@ -772,6 +811,9 @@ def main() -> int:
         return 0
     if args.command == 'normalise-auth':
         normalise_auth(args)
+        return 0
+    if args.command == 'list-ssh-hosts':
+        list_ssh_hosts(args)
         return 0
     return 1
 

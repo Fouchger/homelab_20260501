@@ -276,12 +276,13 @@ This repository includes a Terraform stack for deploying Proxmox LXCs through th
 cp terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json.example terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
 ```
 
-The Taskfile generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` from SOPS or environment variables. Do not create or commit this file manually.
+Each container has a `password_key` such as `DNS01_LXC_ROOT_PASSWORD`. Run `task terraform:lxc:passwords:prepare` to prompt for any missing values, save them into `state/secrets/passwords/passwords.enc.env`, and generate the local-only `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` bridge file. Do not create or commit this file manually.
 
 Run through Taskfile from the repository root:
 
 ```bash
 task terraform:lxc:init
+task terraform:lxc:passwords:prepare
 task terraform:lxc:plan
 task terraform:lxc:apply
 ```

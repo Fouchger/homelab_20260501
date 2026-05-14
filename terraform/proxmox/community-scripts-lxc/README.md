@@ -10,7 +10,7 @@ This Terraform stack owns only the deployment wrapper and Terraform state. The L
 
 Do not commit passwords in Terraform files. Do not hard-code SSH public keys in container definitions.
 
-The Taskfile generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` from SOPS or environment variables. Do not create or commit this file manually.
+Each container definition stores a `password_key` only. The Taskfile reads those keys, prompts for any missing password values, saves them into `state/secrets/passwords/passwords.enc.env`, and generates `terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json` as a local-only Terraform bridge file. Do not create or commit this file manually.
 
 ## Container configuration
 
@@ -28,6 +28,7 @@ From the repository root:
 
 ```bash
 task terraform:lxc:init
+task terraform:lxc:passwords:prepare
 task terraform:lxc:plan
 task terraform:lxc:apply
 ```
@@ -64,19 +65,19 @@ terraform apply -parallelism=2 \
 
 The repository Taskfile explicitly sources `state/config/.env` because some Task versions do not support the `--dotenv` CLI flag. You can therefore run the Terraform tasks directly from the repository root without manually exporting `.env` values.
 
-For apply, the task also attempts to decrypt `state/secrets/passwords/passwords.enc.env` with SOPS and age. It expects either:
+For plan and apply, the task decrypts `state/secrets/passwords/passwords.enc.env` with SOPS and age, then reads every `.containers[].password_key` from `containers.auto.tfvars.json`. If a key is missing, the task prompts securely, for example:
 
-```bash
-HOMELAB_LXC_ROOT_PASSWORD=<container-root-password>
+```text
+What is the root password to use (DNS01_LXC_ROOT_PASSWORD):
 ```
 
-or the variable referenced by `PROXMOX_SSH_PASSWORD_VAR`. The task writes the password into a local-only generated file:
+The prompted value is saved back into the encrypted password file. The task then writes the required Terraform map into a local-only generated file:
 
 ```text
 terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
 ```
 
-This file is ignored by Git and should not be committed.
+The generated file contains plaintext secrets for Terraform runtime only. It is ignored by Git and should not be committed. Ansible inventory generation uses the same `password_key`, so Terraform and Ansible reference the same per-server secret.
 
 ## Control-plane SSH public key
 

@@ -185,6 +185,7 @@ tasks:
                                             hosts where needed, and report status.
         task ssh:key:recycle             -> Back up the current homelab SSH key and create a replacement.
         task ssh:copy-id                 -> Copy the homelab public key to inventory hosts when needed.
+        task ssh:bootstrap               -> Wait for SSH, copy keys, normalise auth, and verify access.
         task ssh:audit                   -> Show key and per-server passwordless SSH status.
 
         --------------------------------------------------------------
@@ -194,6 +195,7 @@ tasks:
         task terraform:lxc:plan           -> Plan LXC deployments using Proxmox SSH settings from state/config/.env.
         task terraform:lxc:apply          -> Apply LXC deployments using limited parallelism, then prompt to add
                                             Terraform-created LXCs to the Ansible inventory.
+        task terraform:lxc:start          -> Start Terraform-defined LXCs that exist but are not running.
         task terraform:lxc:destroy        -> Destroy Terraform-created LXCs while preserving skipped existing containers.
 
         --------------------------------------------------------------
@@ -255,9 +257,7 @@ tasks:
       - task: terraform:lxc:init
       - task: terraform:lxc:plan
       - task: terraform:lxc:apply
-      - task: env_create:inventory:add:terraform-lxc
-      - task: ssh:copy-id
-      - task: ssh:normalise-auth
+      - task: ssh:bootstrap
       - task: ansible:plex:configure
       - |
         set -euo pipefail

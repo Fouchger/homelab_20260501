@@ -74,17 +74,19 @@ tasks:
         fi
 
         if [[ -f "$password_file" ]] && command -v sops >/dev/null 2>&1; then
-          if [[ -f "$age_key_file" ]] && SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file" >/dev/null 2>&1; then
-            set -a
-            # shellcheck disable=SC1090
-            source <(SOPS_AGE_KEY_FILE="$age_key_file" sops -d "$password_file")
-            set +a
-          elif sops -d "$password_file" >/dev/null 2>&1; then
-            set -a
-            # shellcheck disable=SC1090
-            source <(sops -d "$password_file")
-            set +a
+          if [[ -f "$age_key_file" ]]; then
+            export SOPS_AGE_KEY_FILE="$age_key_file"
           fi
+
+          set -a
+          source <(sops --decrypt --input-type dotenv --output-type dotenv "$password_file")
+          set +a
+        fi
+
+        if [[ -z "${OMV_SMB_PASSWORD:-}" ]]; then
+          echo "ERROR: OMV_SMB_PASSWORD was not exported from ${password_file}." >&2
+          echo "Run: task passwords:edit" >&2
+          exit 1
         fi
 
         mapfile -t hosts < <(ansible all -i "$inventory_file" --list-hosts 2>/dev/null | sed '1d' | awk '{$1=$1; print}' | sed '/^$/d')
@@ -264,7 +266,19 @@ tasks:
             echo "ERROR: Missing SOPS recipients file. Run: task passwords:keys:generate" >&2
             exit 1
           fi
-          sops --encrypt --age "$(cat "$recipients_file")" --input-type dotenv --output-type dotenv "$runtime_file" > "$password_file"
+          recipient="$(grep -v '^[[:space:]]*$' "$recipients_file" | head -n 1)"
+          if [[ -z "$recipient" ]]; then
+            echo "ERROR: SOPS recipient file is empty: ${recipients_file}" >&2
+            exit 1
+          fi
+          encrypted_tmp="$(mktemp)"
+          if ! sops --encrypt --age "$recipient" --input-type dotenv --output-type dotenv --filename-override "$password_file" "$runtime_file" > "$encrypted_tmp"; then
+            rm -f "$encrypted_tmp"
+            echo "ERROR: Failed to encrypt updated password file with SOPS." >&2
+            exit 1
+          fi
+          chmod 600 "$encrypted_tmp"
+          mv "$encrypted_tmp" "$password_file"
           chmod 600 "$password_file"
           rm -f "$runtime_file"
         }

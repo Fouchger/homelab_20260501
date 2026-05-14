@@ -22,6 +22,10 @@ vars:
   TERRAFORM_LXC_TARGET: '{{.TERRAFORM_LXC_TARGET | default ""}}'
   TERRAFORM_LXC_SECRET_TFVARS: terraform/proxmox/community-scripts-lxc/secrets.auto.tfvars.json
   TERRAFORM_LXC_VARS_FILE: terraform/proxmox/community-scripts-lxc/containers.auto.tfvars.json
+  TERRAFORM_LXC_SECRET_MANAGER_SCRIPT: scripts/lib/terraform-lxc-secret-manager.py
+  PROXMOX_LXC_START_MANAGER_SCRIPT: scripts/lib/proxmox-lxc-start-manager.py
+  PROXMOX_LXC_START_WAIT_SECONDS: '{{.PROXMOX_LXC_START_WAIT_SECONDS | default "90"}}'
+  PROXMOX_LXC_SSH_WAIT_SECONDS: '{{.PROXMOX_LXC_SSH_WAIT_SECONDS | default "240"}}'
 
 tasks:
   default:
@@ -47,12 +51,18 @@ tasks:
           task terraform:lxc:init
             Initialise the Proxmox Community Scripts LXC Terraform directory.
 
+          task terraform:lxc:passwords:prepare
+            Prompt for missing per-container LXC root passwords and prepare local Terraform secrets.
+
           task terraform:lxc:plan
             Plan LXC deployment using Proxmox SSH settings from state/config/.env.
 
           task terraform:lxc:apply
             Apply LXC deployment using limited parallelism, then prompt to add
             Terraform-created LXC servers to the Ansible inventory.
+
+          task terraform:lxc:start
+            Start any Terraform-defined LXC containers that exist but are not running.
 
           task terraform:lxc:destroy
             Destroy Terraform-created LXCs. Existing skipped LXCs are preserved.
@@ -83,6 +93,25 @@ tasks:
       - |
         set -euo pipefail
         terraform -chdir='{{.TERRAFORM_LXC_DIR}}' validate
+
+  lxc:passwords:prepare:
+    desc: Prompt for missing per-container LXC root passwords and prepare Terraform LXC secrets.
+    cmds:
+      - |
+        set -euo pipefail
+
+        if [[ ! -f '{{.PASSWORDS_ENCRYPTED_FILE}}' ]]; then
+          echo 'Encrypted password file is missing. Creating it first.'
+          task passwords:encrypt
+        fi
+
+        python3 '{{.TERRAFORM_LXC_SECRET_MANAGER_SCRIPT}}' \
+          --containers-file '{{.TERRAFORM_LXC_VARS_FILE}}' \
+          --password-file '{{.PASSWORDS_ENCRYPTED_FILE}}' \
+          --recipients-file '{{.SOPS_AGE_RECIPIENTS_FILE}}' \
+          --age-key-file '{{.SOPS_AGE_KEY_FILE}}' \
+          --output-file '{{.TERRAFORM_LXC_SECRET_TFVARS}}' \
+          --prompt-missing
 
   lxc:plan:
     desc: Plan Proxmox Community Scripts LXC deployment.
@@ -116,24 +145,13 @@ tasks:
         }
 
         prepare_lxc_secret_tfvars() {
-          local password_value="${HOMELAB_LXC_ROOT_PASSWORD:-}"
-          local password_var="${PROXMOX_SSH_PASSWORD_VAR:-}"
-
-          if [[ -z "$password_value" && -n "$password_var" ]]; then
-            password_value="${!password_var:-}"
-          fi
-
-          if [[ -z "$password_value" ]]; then
-            echo 'WARNING: HOMELAB_LXC_ROOT_PASSWORD is not available from environment or SOPS.' >&2
-            echo '         Terraform plan can run, but apply will fail until the password is provided.' >&2
-            return 0
-          fi
-
-          mkdir -p "$(dirname '{{.TERRAFORM_LXC_SECRET_TFVARS}}')"
-          tmp_secret_file="$(mktemp '{{.TERRAFORM_LXC_DIR}}/.secrets.auto.tfvars.json.XXXXXX')"
-          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > "$tmp_secret_file"
-          chmod 600 "$tmp_secret_file"
-          mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
+          python3 '{{.TERRAFORM_LXC_SECRET_MANAGER_SCRIPT}}' \
+            --containers-file '{{.TERRAFORM_LXC_VARS_FILE}}' \
+            --password-file '{{.PASSWORDS_ENCRYPTED_FILE}}' \
+            --recipients-file '{{.SOPS_AGE_RECIPIENTS_FILE}}' \
+            --age-key-file '{{.SOPS_AGE_KEY_FILE}}' \
+            --output-file '{{.TERRAFORM_LXC_SECRET_TFVARS}}' \
+            --prompt-missing
         }
 
         resolve_controlplane_ssh_public_key() {
@@ -211,24 +229,13 @@ tasks:
         }
 
         prepare_lxc_secret_tfvars() {
-          local password_value="${HOMELAB_LXC_ROOT_PASSWORD:-}"
-          local password_var="${PROXMOX_SSH_PASSWORD_VAR:-}"
-
-          if [[ -z "$password_value" && -n "$password_var" ]]; then
-            password_value="${!password_var:-}"
-          fi
-
-          if [[ -z "$password_value" ]]; then
-            echo 'ERROR: HOMELAB_LXC_ROOT_PASSWORD is required for Terraform LXC apply.' >&2
-            echo '       Add HOMELAB_LXC_ROOT_PASSWORD to the SOPS password file, or export it before running the task.' >&2
-            exit 1
-          fi
-
-          mkdir -p "$(dirname '{{.TERRAFORM_LXC_SECRET_TFVARS}}')"
-          tmp_secret_file="$(mktemp '{{.TERRAFORM_LXC_DIR}}/.secrets.auto.tfvars.json.XXXXXX')"
-          jq -n --arg password "$password_value" '{container_passwords:{HOMELAB_LXC_ROOT_PASSWORD:$password}}' > "$tmp_secret_file"
-          chmod 600 "$tmp_secret_file"
-          mv "$tmp_secret_file" '{{.TERRAFORM_LXC_SECRET_TFVARS}}'
+          python3 '{{.TERRAFORM_LXC_SECRET_MANAGER_SCRIPT}}' \
+            --containers-file '{{.TERRAFORM_LXC_VARS_FILE}}' \
+            --password-file '{{.PASSWORDS_ENCRYPTED_FILE}}' \
+            --recipients-file '{{.SOPS_AGE_RECIPIENTS_FILE}}' \
+            --age-key-file '{{.SOPS_AGE_KEY_FILE}}' \
+            --output-file '{{.TERRAFORM_LXC_SECRET_TFVARS}}' \
+            --prompt-missing
         }
 
         resolve_controlplane_ssh_public_key() {
@@ -277,6 +284,41 @@ tasks:
       - |
         set -euo pipefail
         task env_create:inventory:add:terraform-lxc
+      - task: lxc:start
+
+  lxc:start:
+    desc: Start any Terraform-defined Proxmox LXCs that exist but are not running.
+    cmds:
+      - |
+        set -euo pipefail
+
+        if [[ -f '{{.CONFIG_ENV_FILE}}' ]]; then
+          set -a
+          # shellcheck disable=SC1091
+          . '{{.CONFIG_ENV_FILE}}'
+          set +a
+        fi
+
+        proxmox_host="${PROXMOX_SSH_HOST:-${PROXMOX_HOST_IP:-}}"
+        proxmox_user="${PROXMOX_SSH_USER:-root}"
+        proxmox_port="${PROXMOX_SSH_PORT:-22}"
+        ssh_key_file="${HOMELAB_SSH_KEY_FILE:-{{.SSH_KEY_FILE}}}"
+
+        if [[ -z "$proxmox_host" ]]; then
+          echo 'ERROR: PROXMOX_SSH_HOST or PROXMOX_HOST_IP must be set in state/config/.env.' >&2
+          echo '       Run: task proxmox:host:configure' >&2
+          exit 1
+        fi
+
+        python3 '{{.PROXMOX_LXC_START_MANAGER_SCRIPT}}' \
+          --containers-file '{{.TERRAFORM_LXC_VARS_FILE}}' \
+          --proxmox-host "$proxmox_host" \
+          --proxmox-user "$proxmox_user" \
+          --proxmox-port "$proxmox_port" \
+          --ssh-key-file "$ssh_key_file" \
+          --wait-seconds '{{.PROXMOX_LXC_START_WAIT_SECONDS}}' \
+          --wait-ssh \
+          --ssh-wait-seconds '{{.PROXMOX_LXC_SSH_WAIT_SECONDS}}'
 
   lxc:destroy:
     desc: Destroy Terraform-created Proxmox Community Scripts LXCs.
