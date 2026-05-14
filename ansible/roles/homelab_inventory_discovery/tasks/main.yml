@@ -1,0 +1,80 @@
+---
+# ==============================================================================
+# File: ansible/roles/homelab_inventory_discovery/tasks/main.yml
+# Purpose:
+#   Run arp-scan locally and update the homelab Ansible inventory with discovered
+#   hosts while preserving existing host metadata.
+# Notes:
+#   - arp-scan normally needs elevated privileges for raw packet capture.
+#   - Inventory writing is delegated to scripts/lib/inventory-network-sync.py.
+# ==============================================================================
+
+- name: Validate required discovery paths
+  ansible.builtin.assert:
+    that:
+      - homelab_inventory_discovery_inventory_file | length > 0
+      - homelab_inventory_discovery_script_file | length > 0
+      - homelab_inventory_discovery_group | length > 0
+      - homelab_inventory_discovery_ssh_user | length > 0
+      - homelab_inventory_discovery_ssh_port | string | length > 0
+    fail_msg: "Inventory discovery role variables are incomplete."
+
+- name: Ensure inventory directory exists
+  ansible.builtin.file:
+    path: "{{ homelab_inventory_discovery_inventory_file | dirname }}"
+    state: directory
+    mode: "0700"
+
+- name: Check arp-scan is installed
+  ansible.builtin.command: which arp-scan
+  register: homelab_inventory_discovery_arp_scan_path
+  changed_when: false
+  failed_when: homelab_inventory_discovery_arp_scan_path.rc != 0
+
+- name: Build arp-scan command
+  ansible.builtin.set_fact:
+    homelab_inventory_discovery_arp_scan_command: >-
+      {{ homelab_inventory_discovery_arp_scan_path.stdout }}
+      {% if homelab_inventory_discovery_interface | length > 0 %}--interface={{ homelab_inventory_discovery_interface }}{% endif %}
+      {% if homelab_inventory_discovery_scan_target == 'localnet' %}--localnet{% else %}{{ homelab_inventory_discovery_scan_target }}{% endif %}
+
+- name: Scan network with arp-scan
+  ansible.builtin.command: "{{ homelab_inventory_discovery_arp_scan_command }}"
+  become: true
+  register: homelab_inventory_discovery_scan
+  changed_when: false
+
+- name: Synchronise discovered hosts into inventory
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ homelab_inventory_discovery_script_file }}"
+      - --inventory-file
+      - "{{ homelab_inventory_discovery_inventory_file }}"
+      - --report-file
+      - "{{ homelab_inventory_discovery_report_file }}"
+      - --group
+      - "{{ homelab_inventory_discovery_group }}"
+      - --hostname-prefix
+      - "{{ homelab_inventory_discovery_hostname_prefix }}"
+      - --ssh-user
+      - "{{ homelab_inventory_discovery_ssh_user }}"
+      - --ssh-port
+      - "{{ homelab_inventory_discovery_ssh_port | string }}"
+      - --ssh-key-file
+      - "{{ homelab_inventory_discovery_ssh_key_file }}"
+      - --python-interpreter
+      - "{{ homelab_inventory_discovery_python_interpreter }}"
+      - --password-var-strategy
+      - "{{ homelab_inventory_discovery_password_var_strategy }}"
+      - "{{ '--update-existing' if homelab_inventory_discovery_update_existing | bool else '--no-update-existing' }}"
+      - "{{ '--add-new' if homelab_inventory_discovery_add_new | bool else '--no-add-new' }}"
+      - "{{ '--dry-run' if homelab_inventory_discovery_dry_run | bool else '--apply' }}"
+  args:
+    stdin: "{{ homelab_inventory_discovery_scan.stdout }}"
+  register: homelab_inventory_discovery_sync
+  changed_when: "'changed: 0' not in homelab_inventory_discovery_sync.stdout"
+
+- name: Show inventory discovery summary
+  ansible.builtin.debug:
+    msg: "{{ homelab_inventory_discovery_sync.stdout_lines }}"

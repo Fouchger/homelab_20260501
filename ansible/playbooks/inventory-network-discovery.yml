@@ -1,0 +1,17 @@
+---
+# ==============================================================================
+# File: ansible/playbooks/inventory-network-discovery.yml
+# Purpose:
+#   Scan the local network and synchronise discovered hosts into the homelab
+#   Ansible inventory.
+# Notes:
+#   - Run from the repository root with: task ansible:inventory:scan
+#   - Override the scan target with DISCOVERY_TARGET=192.168.20.0/24.
+# ==============================================================================
+
+- name: Scan network and update homelab inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: homelab_inventory_discovery

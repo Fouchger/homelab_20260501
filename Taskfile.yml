@@ -104,33 +104,36 @@ tasks:
       - task --taskfile "{{.TASKFILE}}" --list
 
   help:
-    desc: Show safe tasks a user can run and what each task does
+    desc: Show customer-facing tasks a user can run and what each task does
     cmds:
       - |
         set -euo pipefail
 
         cat <<'EOHELP'
-        Homelab safe task help
+        Homelab task help
 
-        Run tasks from the repository root. This help only lists tasks intended
-        for normal operator use. Destructive, high-risk, or internal helper
-        tasks are intentionally excluded.
+        Run tasks from the repository root. Internal helper tasks are intentionally
+        excluded. High-risk customer-facing tasks are listed separately so they are
+        visible but not mistaken for routine operations.
 
         --------------------------------------------------------------
         General
         --------------------------------------------------------------
-        task help                       -> Show this safe task help.
+        task help                       -> Show this task help.
+        task tasklist                   -> Show all registered Taskfile tasks from the root Taskfile.
 
         --------------------------------------------------------------
-        Homelab Setup
+        Homelab setup
         --------------------------------------------------------------
         task homelab:setup              -> Run the standard homelab setup flow, including required script
-                                            permissions and the reviewed Proxmox code-server helper.
+                                            permissions, password setup, GitHub setup, tooling setup, inventory
+                                            setup, Proxmox API bootstrap, Terraform LXC deployment, SSH
+                                            bootstrap, Plex configuration, and health reporting.
 
         --------------------------------------------------------------
         Password and secrets setup
         --------------------------------------------------------------
-        task passwords:help             -> Show safe password and SOPS tasks only.
+        task passwords:help             -> Show password and SOPS task help.
         task passwords:setup            -> Install required tools, configure SOPS and age, generate keys,
                                             create an offline backup, encrypt the password file, and clean up
                                             runtime plaintext files.
@@ -160,85 +163,137 @@ tasks:
         --------------------------------------------------------------
         Application and automation tooling
         --------------------------------------------------------------
-        task apps:setup                 -> Install Python, pipx, Ansible, Terraform, Packer,
-                                            and recommended Ansible content for this homelab.
+        task apps:help                  -> Show application and automation tooling task help.
+        task apps:setup                 -> Install Python, pipx, Ansible, Terraform, Packer, and recommended
+                                            Ansible content for this homelab.
+        task apps:prerequisites         -> Install common Debian/Ubuntu prerequisites used by app installers.
+        task apps:python                -> Install Python 3, pip, venv, setuptools, wheel, and pipx.
+        task apps:ansible               -> Install Ansible with pipx and install recommended Galaxy content.
+        task apps:hashicorp:repo        -> Configure the official HashiCorp apt repository.
+        task apps:terraform             -> Install Terraform from the official HashiCorp apt repository.
+        task apps:packer                -> Install Packer from the official HashiCorp apt repository.
         task apps:audit                 -> Show installed application and automation tooling status.
-        task health:check                -> Run a consolidated operational health check across core areas.
-        task health:capabilities         -> Show what the control plane can currently do.
-        task health:setup-state          -> Show first-run/repeat-run state markers.
 
         --------------------------------------------------------------
-        Git and Github Operations
+        Health and capability reporting
         --------------------------------------------------------------
-        task github:setup                -> Install Git and GitHub CLI, configure Git identity, authenticate
+        task health:check               -> Run a consolidated operational health check across core areas.
+        task health:capabilities        -> Show what the control plane can currently do.
+        task health:setup-state         -> Show first-run and repeat-run state markers.
+        task health:all                 -> Run existing detailed audits across core task areas.
+
+        --------------------------------------------------------------
+        Git and GitHub operations
+        --------------------------------------------------------------
+        task github:help                -> Show Git and GitHub task help.
+        task github:setup               -> Install Git and GitHub CLI, configure Git identity, authenticate
                                             GitHub CLI, and report status.
-        task github:audit                -> Show Git, gh, identity, token-source, and authentication status
+        task github:install             -> Install Git and GitHub CLI if they are missing.
+        task github:configure           -> Configure GitHub username and Git identity, asking for missing values.
+        task github:auth                -> Authenticate GitHub CLI with a token if not already logged in.
+        task github:audit               -> Show Git, gh, identity, token-source, and authentication status
                                             without printing secrets.
 
         --------------------------------------------------------------
-        SSH Operations
+        Inventory operations
         --------------------------------------------------------------
-        task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
+        task env_create:help            -> Show environment and inventory task help.
+        task env_create:inventory:init  -> Create state/ansible/inventory.yml when missing with a minimum local
                                             host definition.
-        task ssh:setup                   -> Install SSH tooling, initialise the Ansible inventory if missing,
-                                            create the homelab Ed25519 key if missing, copy it to inventory
-                                            hosts where needed, and report status.
-        task ssh:key:recycle             -> Back up the current homelab SSH key and create a replacement.
-        task ssh:copy-id                 -> Copy the homelab public key to inventory hosts when needed.
-        task ssh:bootstrap               -> Wait for SSH, copy keys, normalise auth, and verify access.
-        task ssh:audit                   -> Show key and per-server passwordless SSH status.
-
-        --------------------------------------------------------------
-        Terraform Operations
-        --------------------------------------------------------------
-        task terraform:lxc:init           -> Initialise the Proxmox Community Scripts LXC Terraform stack.
-        task terraform:lxc:plan           -> Plan LXC deployments using Proxmox SSH settings from state/config/.env.
-        task terraform:lxc:apply          -> Apply LXC deployments using limited parallelism, then prompt to add
-                                            Terraform-created LXCs to the Ansible inventory.
-        task terraform:lxc:start          -> Start Terraform-defined LXCs that exist but are not running.
-        task terraform:lxc:destroy        -> Destroy Terraform-created LXCs while preserving skipped existing containers.
-
-        --------------------------------------------------------------
-        Ansible Operations
-        --------------------------------------------------------------
-        task env_create:inventory:init    -> Create state/ansible/inventory.yml when missing with a minimum local
-                                            host definition.
-        task env_create:inventory:add     -> Interactively add or update a grouped server in the Ansible
-                                            inventory, including SSH IP/DNS target, VM/LXC ID, MAC address, SSH
-                                            user, password variable reference, and Python interpreter mode.
+        task env_create:inventory:add   -> Interactively add or update a grouped server in the Ansible inventory,
+                                            including SSH IP/DNS target, VM/LXC ID, MAC address, SSH user,
+                                            password variable reference, and Python interpreter mode.
         task env_create:inventory:add:terraform-lxc -> Loop through Terraform LXC definitions, prefill inventory
                                             fields, and prompt before writing each server to inventory.
         task env_create:inventory:discover -> Scan a CIDR with nmap and report discovered hosts not yet in inventory.
         task env_create:inventory:add:server -> Non-interactively add or update a server in the Ansible inventory
                                             using task variables for automation and other tasks.
-        task ansible:ping                -> Run ansible all -m ping using the homelab inventory.
-        task ansible:plex:configure      -> Prompt for missing Plex values, then configure Plex servers with reusable Ansible roles.                                
-
 
         --------------------------------------------------------------
-        Proxmox Terraform API bootstrap
+        SSH operations
         --------------------------------------------------------------
-        task proxmox:host:configure    -> Prompt once for Proxmox host metadata, then update
+        task ssh:help                   -> Show SSH task help.
+        task ssh:setup                  -> Install SSH tooling, initialise the Ansible inventory if missing,
+                                            create the homelab Ed25519 key if missing, copy it to inventory
+                                            hosts where needed, and report status.
+        task ssh:install                -> Install ssh and ssh-copy-id if they are missing.
+        task ssh:key:ensure             -> Create the homelab Ed25519 SSH key if it does not exist.
+        task ssh:key:recycle            -> Back up the current homelab SSH key and create a replacement.
+        task ssh:copy-id                -> Copy the homelab public key to inventory hosts when needed.
+        task ssh:wait-ready             -> Wait until all non-local inventory hosts accept SSH TCP connections.
+        task ssh:bootstrap              -> Wait for SSH, copy keys, normalise auth, and verify access.
+        task ssh:verify                 -> Fail unless every non-local inventory host accepts key-based SSH.
+        task ssh:normalise-auth         -> Switch inventory hosts to key-based steady-state Ansible authentication
+                                            when SSH key login works.
+        task ssh:audit                  -> Show key and per-server passwordless SSH status.
+
+        --------------------------------------------------------------
+        Proxmox API bootstrap
+        --------------------------------------------------------------
+        task proxmox:help               -> Show Proxmox automation task help.
+        task proxmox:tools:check        -> Validate local tooling required for Proxmox API bootstrap.
+        task proxmox:host:configure     -> Prompt once for Proxmox host metadata, then update
                                             state/config/.env and state/ansible/inventory.yml.
-        task proxmox:api:ensure        -> Create or reconcile the Proxmox Terraform role, user,
-                                            root ACL, and API token. Reuses existing valid local
-                                            and remote token state.
-        task proxmox:api:recycle       -> Force-remove and recreate the Proxmox Terraform API token,
+        task proxmox:api:ensure         -> Create or reconcile the Proxmox Terraform role, user, root ACL,
+                                            and API token. Reuses existing valid local and remote token state.
+        task proxmox:api:recycle        -> Force-remove and recreate the Proxmox Terraform API token,
                                             then update encrypted local state.
-        task proxmox:api:report        -> Show Proxmox API bootstrap status without printing secrets.
+        task proxmox:api:report         -> Show Proxmox API bootstrap status without printing secrets.
 
         --------------------------------------------------------------
-        Not listed here
+        Proxmox helper scripts
         --------------------------------------------------------------
-          Destructive or higher-risk tasks such as password destruction, raw
-          decryption, terminal password display, and key rotation are excluded
-          from safe help. Inspect the Taskfiles directly if you need advanced
-          maintenance operations.
+        task proxmox_scripts:code-server:install -> Install code-server using the reviewed static repo script.
+        task proxmox_scripts:community:list      -> List reusable Proxmox Community Script wrappers supported
+                                            by this repo.
+        task proxmox_scripts:community:init      -> Create a reusable Proxmox Community Script config if it
+                                            does not exist.
+        task proxmox_scripts:community:configure -> Interactively configure reusable Advanced Install variables
+                                            for a Proxmox Community Script.
+        task proxmox_scripts:community:plan      -> Show planned Proxmox Community Script LXC creation runs
+                                            without creating anything.
+        task proxmox_scripts:community:run       -> Create LXCs through Proxmox Community Scripts and update
+                                            inventory after successful creation.
+        task proxmox_scripts:community:audit     -> Show Proxmox Community Script wrapper config status.
 
+        --------------------------------------------------------------
+        Terraform operations
+        --------------------------------------------------------------
+        task terraform:help             -> Show Terraform task help.
+        task terraform:lxc:init         -> Initialise the Proxmox Community Scripts LXC Terraform stack.
+        task terraform:lxc:fmt          -> Format the Proxmox Community Scripts LXC Terraform files.
+        task terraform:lxc:validate     -> Validate the Proxmox Community Scripts LXC Terraform configuration.
+        task terraform:lxc:passwords:prepare -> Prompt for missing per-container LXC root passwords and prepare
+                                            Terraform LXC secrets.
+        task terraform:lxc:plan         -> Plan LXC deployments using Proxmox SSH settings from state/config/.env.
+        task terraform:lxc:apply        -> Apply LXC deployments using limited parallelism, then prompt to add
+                                            Terraform-created LXCs to the Ansible inventory.
+        task terraform:lxc:start        -> Start Terraform-defined LXCs that exist but are not running.
+        task terraform:lxc:destroy      -> Destroy Terraform-created LXCs while preserving skipped existing containers.
+        task terraform:lxc:destroy:target -> Destroy one Terraform-created LXC by logical hostname.
+
+        --------------------------------------------------------------
+        Ansible operations
+        --------------------------------------------------------------
+        task ansible:help               -> Show Ansible task help.
+        task ansible:ping               -> Run ansible all -m ping using the homelab inventory.
+        task ansible:plex:prepare-vars  -> Prompt for missing Plex variables and save them to state files.
+        task ansible:plex:configure     -> Prompt for missing Plex values, then configure Plex servers with
+                                            reusable Ansible roles.
+        task ansible:audit              -> Report Ansible readiness and connectivity capability.
+
+        --------------------------------------------------------------
+        Advanced and high-risk operations
+        --------------------------------------------------------------
+        task passwords:decrypt          -> Decrypt the password file to a temporary runtime file.
+        task passwords:display          -> Display decrypted passwords in the terminal.
+        task passwords:keys:rotate      -> Rotate age keys and re-encrypt the password file.
+        task passwords:destroy          -> Destroy passwords and uninstall SOPS and age where safely owned by
+                                            this task. Treat as destructive.
         EOHELP
 
   homelab:setup:
-    desc: Set up the complete homelab control plane, then back up and plan MikroTik changes
+    desc: Set up the complete homelab control plane and apply the standard first-run automation flow
     cmds:
       - |
         set -euo pipefail

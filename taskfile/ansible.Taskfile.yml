@@ -34,6 +34,8 @@ tasks:
           'Connectivity' \
           '  task ansible:ping' \
           '    Run ansible all -m ping against state/ansible/inventory.yml.' \
+          '  task ansible:inventory:scan DISCOVERY_TARGET=localnet' \
+          '    Scan the network with arp-scan and update state/ansible/inventory.yml.' \
           '' \
           'Plex' \
           '  task ansible:plex:configure' \
@@ -119,6 +121,64 @@ tasks:
           echo
           echo "WARNING: ${failed} host(s) failed Ansible ping. Setup will continue; review inventory, SSH key auth, and SOPS readiness."
         fi
+
+
+  inventory:scan:
+    desc: Scan the network with arp-scan and update the homelab Ansible inventory.
+    cmds:
+      - |
+        set -euo pipefail
+        # shellcheck source=/dev/null
+        source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
+        print_section_header "Scan network and update Ansible inventory." "PEACH"
+      - |
+        set -euo pipefail
+        export PATH="${HOME}/.local/bin:${PATH}"
+        export ROOT_DIR="${ROOT_DIR}"
+
+        inventory_file="{{.ANSIBLE_INVENTORY_FILE}}"
+        inventory_dir="{{.ANSIBLE_DIR}}"
+        playbook_file="ansible/playbooks/inventory-network-discovery.yml"
+        discovery_target="{{.DISCOVERY_TARGET | default "localnet"}}"
+        discovery_interface="{{.DISCOVERY_INTERFACE | default ""}}"
+        discovery_group="{{.DISCOVERY_GROUP | default "discovered"}}"
+        discovery_ssh_user="{{.DISCOVERY_SSH_USER | default "root"}}"
+        discovery_ssh_port="{{.DISCOVERY_SSH_PORT | default "22"}}"
+        discovery_hostname_prefix="{{.DISCOVERY_HOSTNAME_PREFIX | default "host"}}"
+        discovery_dry_run="{{.DISCOVERY_DRY_RUN | default "false"}}"
+
+        mkdir -p "$inventory_dir"
+
+        if [[ ! -f "$inventory_file" ]]; then
+          echo "Inventory file does not exist. Creating the baseline inventory first."
+          task env_create:inventory:init
+        fi
+
+        if ! command -v ansible-playbook >/dev/null 2>&1; then
+          echo "ERROR: ansible-playbook is not available on PATH." >&2
+          echo "Run: task apps:ansible" >&2
+          exit 1
+        fi
+
+        if ! command -v arp-scan >/dev/null 2>&1; then
+          echo "ERROR: arp-scan is not available on PATH." >&2
+          echo "Run: task apps:prerequisites" >&2
+          exit 1
+        fi
+
+        export ANSIBLE_CONFIG="${ROOT_DIR}/ansible.cfg"
+        export ANSIBLE_ROLES_PATH="${ROOT_DIR}/ansible/roles:${ANSIBLE_ROLES_PATH:-}"
+
+        ansible-playbook -i "localhost," "$playbook_file" \
+          -e "homelab_inventory_discovery_inventory_file=$inventory_file" \
+          -e "homelab_inventory_discovery_script_file={{.INVENTORY_NETWORK_SYNC_SCRIPT}}" \
+          -e "homelab_inventory_discovery_scan_target=$discovery_target" \
+          -e "homelab_inventory_discovery_interface=$discovery_interface" \
+          -e "homelab_inventory_discovery_group=$discovery_group" \
+          -e "homelab_inventory_discovery_hostname_prefix=$discovery_hostname_prefix" \
+          -e "homelab_inventory_discovery_ssh_user=$discovery_ssh_user" \
+          -e "homelab_inventory_discovery_ssh_port=$discovery_ssh_port" \
+          -e "homelab_inventory_discovery_dry_run=$discovery_dry_run"
 
   plex:configure:
     desc: Configure Plex servers using reusable Ansible roles.

@@ -1,0 +1,25 @@
+---
+# ==============================================================================
+# File: ansible/roles/homelab_inventory_discovery/defaults/main.yml
+# Purpose:
+#   Defaults for scanning the local network and synchronising discovered hosts into
+#   the homelab Ansible inventory.
+# Notes:
+#   - Keep inventory field defaults here so they are defined once for this role.
+# ==============================================================================
+
+homelab_inventory_discovery_inventory_file: "{{ lookup('env', 'ROOT_DIR') | default(playbook_dir ~ '/../..', true) }}/state/ansible/inventory.yml"
+homelab_inventory_discovery_script_file: "{{ lookup('env', 'ROOT_DIR') | default(playbook_dir ~ '/../..', true) }}/scripts/lib/inventory-network-sync.py"
+homelab_inventory_discovery_scan_target: "localnet"
+homelab_inventory_discovery_interface: ""
+homelab_inventory_discovery_group: "discovered"
+homelab_inventory_discovery_hostname_prefix: "host"
+homelab_inventory_discovery_ssh_user: "root"
+homelab_inventory_discovery_ssh_port: "22"
+homelab_inventory_discovery_ssh_key_file: "{{ lookup('env', 'HOMELAB_SSH_KEY_FILE') | default('~/.ssh/homelab_ed25519', true) }}"
+homelab_inventory_discovery_python_interpreter: "auto_silent"
+homelab_inventory_discovery_password_var_strategy: "hostname"
+homelab_inventory_discovery_update_existing: true
+homelab_inventory_discovery_add_new: true
+homelab_inventory_discovery_dry_run: false
+homelab_inventory_discovery_report_file: "{{ lookup('env', 'ROOT_DIR') | default(playbook_dir ~ '/../..', true) }}/state/ansible/network-discovery-report.txt"
