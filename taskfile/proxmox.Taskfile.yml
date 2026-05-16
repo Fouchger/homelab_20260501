@@ -343,6 +343,7 @@ tasks:
       - :passwords:encrypt
       - :ssh:key:ensure
     cmds:
+      - task: :ssh:bootstrap
       - task: api:apply
         vars:
           FORCE_RECYCLE: 'false'
@@ -355,6 +356,7 @@ tasks:
       - :passwords:encrypt
       - :ssh:key:ensure
     cmds:
+      - task: :ssh:bootstrap
       - task: api:apply
         vars:
           FORCE_RECYCLE: 'true'

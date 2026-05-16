@@ -133,6 +133,14 @@ def encrypted_password_file_is_ready(password_file: Path) -> bool:
     return bool(re.search(r'^(sops_|sops:)', first_chunk, re.MULTILINE))
 
 
+def sops_environment_for(password_file: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    age_key_file = password_file.parent.parent / 'sops' / 'keys.txt'
+    if age_key_file.is_file():
+        env['SOPS_AGE_KEY_FILE'] = str(age_key_file)
+    return env
+
+
 def save_password_value(password_file: Path, recipients_file: Path, key: str, value: str) -> bool:
     if not value:
         return False
@@ -169,6 +177,7 @@ def save_password_value(password_file: Path, recipients_file: Path, key: str, va
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            env=sops_environment_for(password_file),
         )
         if decrypt.returncode != 0:
             print('WARNING: Unable to decrypt the encrypted password file. The inventory will reference the variable only.', file=sys.stderr)
@@ -181,11 +190,12 @@ def save_password_value(password_file: Path, recipients_file: Path, key: str, va
 
         with encrypted_path.open('w', encoding='utf-8') as output_handle:
             encrypt = subprocess.run(
-                ['sops', '--encrypt', '--age', recipient, '--input-type', 'dotenv', '--output-type', 'dotenv', str(runtime_path)],
+                ['sops', '--encrypt', '--age', recipient, '--filename-override', str(password_file), '--input-type', 'dotenv', '--output-type', 'dotenv', str(runtime_path)],
                 stdout=output_handle,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
+                env=sops_environment_for(password_file),
             )
         if encrypt.returncode != 0:
             print('WARNING: Unable to update the encrypted password file. The inventory will reference the variable only.', file=sys.stderr)

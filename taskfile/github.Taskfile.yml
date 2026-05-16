@@ -234,6 +234,10 @@ tasks:
         config_file="{{.CONFIG_ENV_FILE}}"
         encrypted_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
         runtime_file="{{.PASSWORDS_RUNTIME_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+        if [[ -f "$age_key_file" ]]; then
+          export SOPS_AGE_KEY_FILE="$age_key_file"
+        fi
         if [[ ! -f "$config_file" ]]; then
           echo "ERROR: Missing config file: ${config_file}" >&2
           echo "Run ./install.sh first. Only install.sh may create this file." >&2
@@ -303,7 +307,7 @@ tasks:
           cat "$tmp_file" > "$runtime_file"
           rm -f "$tmp_file"
           chmod 600 "$runtime_file"
-          sops --encrypt --age "$(cat '{{.SOPS_AGE_RECIPIENTS_FILE}}')" --input-type dotenv --output-type dotenv "$runtime_file" > "$tmp_file"
+          sops --encrypt --age "$(cat '{{.SOPS_AGE_RECIPIENTS_FILE}}')" --filename-override "$encrypted_file" --input-type dotenv --output-type dotenv "$runtime_file" > "$tmp_file"
           cat "$tmp_file" > "$encrypted_file"
           rm -f "$tmp_file"
           chmod 600 "$encrypted_file"
@@ -385,6 +389,10 @@ tasks:
         config_file="{{.CONFIG_ENV_FILE}}"
         encrypted_file="{{.PASSWORDS_ENCRYPTED_FILE}}"
         runtime_file="{{.PASSWORDS_RUNTIME_FILE}}"
+        age_key_file="{{.SOPS_AGE_KEY_FILE}}"
+        if [[ -f "$age_key_file" ]]; then
+          export SOPS_AGE_KEY_FILE="$age_key_file"
+        fi
         trap 'rm -f "{{.PASSWORDS_RUNTIME_FILE}}"' EXIT
 
         # shellcheck source=/dev/null
