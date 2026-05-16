@@ -25,6 +25,7 @@ readonly GITHUB_BRANCH="${GITHUB_BRANCH:-${HOMELAB_BRANCH:-main}}"
 readonly GIT_PROTOCOL="${HOMELAB_GIT_PROTOCOL:-https}"
 readonly NONINTERACTIVE="${NONINTERACTIVE:-0}"
 readonly TASK_INSTALL_REQUIRED="${TASK_INSTALL_REQUIRED:-1}"
+readonly RUN_SETUP="${RUN_SETUP:-0}"
 
 SETUP="${SETUP:-prod}"
 TARGET_DIR="${TARGET_DIR:-}"
@@ -332,9 +333,9 @@ upsert_env() {
   mkdir -p "$(dirname "$file_path")"
   [ -f "$file_path" ] || install -m 0600 /dev/null "$file_path"
 
-  if grep -Fq "${key_name}=" "$file_path"; then
+  if grep -Eq "^${key_name}=" "$file_path"; then
     awk -v key="$key_name" -v value="$quoted_value" '
-      index($0, key "=") == 1 { print key "=" value; next }
+      $0 ~ "^" key "=" { print key "=" value; next }
       { print }
     ' "$file_path" > "$tmp_file"
   else
@@ -408,7 +409,13 @@ main() {
   ensure_executables
   install_task
 
-  log_success "Install complete. Next command: cd ${TARGET_DIR} && task homelab:setup"
+  if [ "$RUN_SETUP" = "1" ]; then
+    log_info "RUN_SETUP=1 set. Starting task homelab:setup."
+    cd "$TARGET_DIR"
+    task homelab:setup
+  else
+    log_success "Install complete. Next command: cd ${TARGET_DIR} && task homelab:setup"
+  fi
 }
 
 main "$@"

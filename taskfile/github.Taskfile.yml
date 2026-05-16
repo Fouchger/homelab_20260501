@@ -195,6 +195,10 @@ tasks:
           local current_value
           current_value="$(get_config_value "$key")"
           if [[ -z "$current_value" ]]; then
+            if [[ "${NONINTERACTIVE:-0}" == "1" ]]; then
+              echo "ERROR: ${key} is required in NONINTERACTIVE mode. Set it in ${config_file} or the environment." >&2
+              exit 1
+            fi
             current_value="$(read_from_tty "$prompt")"
             if [[ -z "$current_value" ]]; then
               echo "ERROR: ${key} is required. Add it to ${config_file} or rerun this task interactively." >&2
@@ -336,6 +340,10 @@ tasks:
         fi
 
         if [[ -z "$github_token" ]]; then
+          if [[ "${NONINTERACTIVE:-0}" == "1" ]]; then
+            echo "ERROR: {{.GITHUB_TOKEN_KEY}} is required in NONINTERACTIVE mode. Store it with task passwords:edit or export it for this run." >&2
+            exit 1
+          fi
           github_token="$(read_secret_from_tty "GitHub token")"
           if [[ -z "$github_token" ]]; then
             echo "ERROR: {{.GITHUB_TOKEN_KEY}} is required to authenticate gh. Add it to ${config_file} or rerun this task interactively." >&2
@@ -345,11 +353,15 @@ tasks:
           if set_password_value "{{.GITHUB_TOKEN_KEY}}" "$github_token"; then
             token_source="encrypted password file"
             echo "Saved GitHub token in {{.PASSWORDS_ENCRYPTED_FILE}}."
-          else
+          elif [[ "${ALLOW_PLAINTEXT_TOKEN:-0}" == "1" ]]; then
             set_config_value "{{.GITHUB_TOKEN_KEY}}" "$github_token"
             token_source="local config file"
-            echo "WARNING: SOPS is not configured. Saved GitHub token in {{.CONFIG_ENV_FILE}} with restricted permissions." >&2
+            echo "WARNING: ALLOW_PLAINTEXT_TOKEN=1 set. Saved GitHub token in {{.CONFIG_ENV_FILE}} with restricted permissions." >&2
             echo "Run task passwords:setup, then rerun task github:auth to move the token into encrypted storage." >&2
+          else
+            echo "ERROR: Refusing to save {{.GITHUB_TOKEN_KEY}} in plaintext." >&2
+            echo "       Run task passwords:setup first, or explicitly set ALLOW_PLAINTEXT_TOKEN=1 for a temporary local fallback." >&2
+            exit 1
           fi
         fi
 

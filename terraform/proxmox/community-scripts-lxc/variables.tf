@@ -43,6 +43,13 @@ variable "script_base" {
   default     = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/2026-05-12/ct"
 }
 
+
+variable "script_sha256" {
+  description = "Optional map of Community Script app names to expected SHA-256 checksums. Empty values skip checksum validation."
+  type        = map(string)
+  default     = {}
+}
+
 variable "destroy_lxc_on_terraform_destroy" {
   description = "Destroy Terraform-created LXCs when terraform destroy is run. Existing containers skipped during apply are not destroyed."
   type        = bool

@@ -91,8 +91,8 @@ msg_ok "Installed Dependencies"
 #   awk '{print substr($2, 3, length($2)-4) }')
 
 # echo "$VERSION"
-VERSION=4.117.0
-
+VERSION="${CODE_SERVER_VERSION:-4.117.0}"
+CODE_SERVER_DEB_SHA256="${CODE_SERVER_DEB_SHA256:-}"
 
 msg_info "Installing Code-Server v${VERSION}"
 config_path="${HOME}/.config/code-server/config.yaml"
@@ -102,9 +102,21 @@ if [ -f "$config_path" ]; then
   preexisting_config=true
 fi
 
-curl -fOL https://github.com/coder/code-server/releases/download/v"$VERSION"/code-server_"${VERSION}"_amd64.deb &>/dev/null
-dpkg -i code-server_"${VERSION}"_amd64.deb &>/dev/null
-rm -rf code-server_"${VERSION}"_amd64.deb
+deb_file="code-server_${VERSION}_amd64.deb"
+curl -fsSLO --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 \
+  "https://github.com/coder/code-server/releases/download/v${VERSION}/${deb_file}"
+
+if [ -n "$CODE_SERVER_DEB_SHA256" ]; then
+  actual_sha256="$(sha256sum "$deb_file" | awk '{print $1}')"
+  if [ "$actual_sha256" != "$CODE_SERVER_DEB_SHA256" ]; then
+    error_exit "SHA-256 verification failed for ${deb_file}."
+  fi
+else
+  echo -e "${YW}WARNING:${CL} CODE_SERVER_DEB_SHA256 is not set; relying on pinned version and TLS only."
+fi
+
+dpkg -i "$deb_file" &>/dev/null
+rm -f "$deb_file"
 mkdir -p "${HOME}/.config/code-server/"
 
 if [ "$preexisting_config" = false ]; then

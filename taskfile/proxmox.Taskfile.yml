@@ -119,6 +119,16 @@ tasks:
           default_value="$2"
           required="$3"
 
+          if [ "${NONINTERACTIVE:-0}" = "1" ]; then
+            value="$default_value"
+            if [ "$required" = 'true' ] && [ -z "$value" ]; then
+              echo "ERROR: ${label} is required in NONINTERACTIVE mode. Set it in {{.CONFIG_ENV_FILE}} or the environment." >&2
+              exit 1
+            fi
+            printf '%s' "$value"
+            return 0
+          fi
+
           if [ -n "$default_value" ]; then
             printf '%s [%s]: ' "$label" "$default_value" > /dev/tty
           else
@@ -139,6 +149,11 @@ tasks:
         prompt_secret() {
           label="$1"
           required="$2"
+
+          if [ "${NONINTERACTIVE:-0}" = "1" ]; then
+            echo "ERROR: ${label} is required in NONINTERACTIVE mode. Store it in the encrypted password file before running." >&2
+            exit 1
+          fi
 
           printf '%s: ' "$label" > /dev/tty
           stty -echo < /dev/tty

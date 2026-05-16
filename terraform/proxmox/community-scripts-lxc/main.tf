@@ -73,6 +73,20 @@ resource "null_resource" "community_script_lxc" {
       trap cleanup EXIT
 
       curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 "$script_url" -o "$script_file"
+
+      expected_sha256=${jsonencode(lookup(var.script_sha256, each.value.app, ""))}
+      if [ -n "$expected_sha256" ]; then
+        actual_sha256="$(sha256sum "$script_file" | awk '{print $1}')"
+        if [ "$actual_sha256" != "$expected_sha256" ]; then
+          echo "[ERROR] SHA-256 verification failed for ${each.value.app}." >&2
+          echo "        Expected: $expected_sha256" >&2
+          echo "        Actual:   $actual_sha256" >&2
+          exit 1
+        fi
+      else
+        echo "[WARN] No SHA-256 checksum configured for ${each.value.app}; relying on pinned URL and TLS only." >&2
+      fi
+
       chmod 700 "$script_file"
 
       env \

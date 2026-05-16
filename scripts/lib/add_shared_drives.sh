@@ -72,11 +72,16 @@ shared_drives() {
       exit 1
     fi
 
-    sudo bash -c "cat > '$cred_file' <<EOF
-username=$omv_user
-password=$omv_pass
-EOF"
-    sudo chmod 600 "$cred_file"
+    tmp_cred_file="$(mktemp)"
+    cleanup_tmp_cred_file() { rm -f "$tmp_cred_file"; }
+    trap cleanup_tmp_cred_file RETURN
+
+    {
+      printf 'username=%s\n' "$omv_user"
+      printf 'password=%s\n' "$omv_pass"
+    } > "$tmp_cred_file"
+
+    sudo install -m 0600 "$tmp_cred_file" "$cred_file"
     echo "Credentials file created."
   else
     echo "Credentials file already exists. Reusing it."

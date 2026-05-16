@@ -293,7 +293,17 @@ tasks:
         EOHELP
 
   homelab:setup:
-    desc: Set up the complete homelab control plane and apply the standard first-run automation flow
+    desc: Run the full homelab setup through explicit bootstrap, configure, provision, access, service, and validation phases.
+    cmds:
+      - task: homelab:bootstrap
+      - task: homelab:configure
+      - task: homelab:provision
+      - task: homelab:access
+      - task: homelab:configure-services
+      - task: homelab:validate
+
+  homelab:bootstrap:
+    desc: Prepare local control-plane tooling, encrypted secrets, GitHub access, and the SSH key only.
     cmds:
       - |
         set -euo pipefail
@@ -306,14 +316,36 @@ tasks:
       - task: github:setup
       - task: apps:setup
       - task: env_create:inventory:init
+      - task: ssh:install
+      - task: ssh:key:ensure
+
+  homelab:configure:
+    desc: Capture Proxmox host configuration and prepare the Proxmox API automation account.
+    cmds:
       - task: proxmox:host:configure
-      - task: ssh:setup
       - task: proxmox:api:ensure
+
+  homelab:provision:
+    desc: Initialise, plan, apply, inventory-sync, and start Terraform-defined LXCs.
+    cmds:
       - task: terraform:lxc:init
       - task: terraform:lxc:plan
       - task: terraform:lxc:apply
+      - task: terraform:lxc:start
+
+  homelab:access:
+    desc: Wait for provisioned hosts, bootstrap SSH keys, and verify key-based access.
+    cmds:
       - task: ssh:bootstrap
+
+  homelab:configure-services:
+    desc: Configure application services after hosts are provisioned and reachable.
+    cmds:
       - task: ansible:plex:configure
+
+  homelab:validate:
+    desc: Run final connectivity and health checks, then write the setup marker.
+    cmds:
       - |
         set -euo pipefail
 
@@ -335,3 +367,37 @@ tasks:
         # shellcheck source=/dev/null
         source "${ROOT_DIR}/{{.TERMINAL_COLOURS_SCRIPT}}"
         print_section_header "Homelab setup is complete. Enjoy!" "GREEN"
+
+  ci:
+    desc: Run safe static validation checks for shell, Python, Terraform, Ansible, and YAML files.
+    cmds:
+      - |
+        set -euo pipefail
+
+        if command -v shellcheck >/dev/null 2>&1; then
+          find . -type f -name '*.sh' -not -path './.git/*' -print0 | xargs -0 -r shellcheck
+        else
+          echo "WARNING: shellcheck is not installed; skipping shell lint." >&2
+        fi
+
+        python3 -m compileall -q scripts
+
+        if command -v terraform >/dev/null 2>&1; then
+          terraform -chdir='terraform/proxmox/community-scripts-lxc' fmt -check
+          terraform -chdir='terraform/proxmox/community-scripts-lxc' init -backend=false
+          terraform -chdir='terraform/proxmox/community-scripts-lxc' validate
+        else
+          echo "WARNING: terraform is not installed; skipping Terraform checks." >&2
+        fi
+
+        if command -v ansible-playbook >/dev/null 2>&1; then
+          ansible-playbook --syntax-check ansible/playbooks/*.yml
+        else
+          echo "WARNING: ansible-playbook is not installed; skipping Ansible syntax checks." >&2
+        fi
+
+        if command -v yamllint >/dev/null 2>&1; then
+          yamllint .
+        else
+          echo "WARNING: yamllint is not installed; skipping YAML lint." >&2
+        fi

@@ -295,6 +295,16 @@ tasks:
             current_value="$(read_env_value "$key")"
           fi
           if [[ -z "$current_value" ]]; then
+            if [[ "${NONINTERACTIVE:-0}" == "1" ]]; then
+              current_value="$default_value"
+              if [[ -z "$current_value" ]]; then
+                echo "ERROR: ${key} is required in NONINTERACTIVE mode. Set it in ${config_file} or the environment." >&2
+                exit 1
+              fi
+              upsert_env_file "$config_file" "$key" "$current_value"
+              export "$key=$current_value"
+              return 0
+            fi
             printf '%s [%s]: ' "$prompt" "$default_value" > /dev/tty
             IFS= read -r current_value < /dev/tty
             current_value="${current_value:-$default_value}"
@@ -358,6 +368,10 @@ tasks:
             current_value="$(read_secret_value "$key")"
           fi
           if [[ -z "$current_value" ]]; then
+            if [[ "${NONINTERACTIVE:-0}" == "1" ]]; then
+              echo "ERROR: ${key} is required in NONINTERACTIVE mode. Store it in ${password_file} or export it for this run." >&2
+              exit 1
+            fi
             printf '%s: ' "$prompt" > /dev/tty
             IFS= read -rs current_value < /dev/tty
             printf '\n' > /dev/tty
